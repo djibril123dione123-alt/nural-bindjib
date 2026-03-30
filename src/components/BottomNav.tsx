@@ -3,9 +3,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
   { path: "/", icon: "⚔️", label: "Quêtes" },
+  { path: "/hifz", icon: "📖", label: "Hifz" },
   { path: "/deep-work", icon: "🎯", label: "Focus" },
+  { path: "/journal", icon: "🌙", label: "Journal" },
   { path: "/chat", icon: "💬", label: "Duo" },
-  { path: "/profile", icon: "👤", label: "Profil" },
 ];
 
 export function BottomNav() {
@@ -23,18 +24,18 @@ export function BottomNav() {
                 key={item.path}
                 whileTap={{ scale: 0.9 }}
                 onClick={() => navigate(item.path)}
-                className={`flex-1 flex flex-col items-center gap-0.5 py-3 transition-colors ${
+                className={`relative flex-1 flex flex-col items-center gap-0.5 py-2.5 transition-colors ${
                   active ? "text-primary" : "text-muted-foreground"
                 }`}
               >
-                <span className="text-lg">{item.icon}</span>
-                <span className="text-[10px] uppercase tracking-wider font-medium">
+                <span className="text-base">{item.icon}</span>
+                <span className="text-[9px] uppercase tracking-wider font-medium">
                   {item.label}
                 </span>
                 {active && (
                   <motion.div
                     layoutId="nav-indicator"
-                    className="absolute top-0 w-12 h-0.5 bg-primary rounded-full"
+                    className="absolute top-0 w-8 h-0.5 bg-primary rounded-full"
                   />
                 )}
               </motion.button>
