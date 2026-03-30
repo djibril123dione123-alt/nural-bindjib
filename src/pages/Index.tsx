@@ -1,13 +1,16 @@
 import { motion } from "framer-motion";
 import { PILLARS } from "@/lib/questData";
 import { useQuestEngine } from "@/hooks/useQuestEngine";
+import { useAuth } from "@/hooks/useAuth";
 import { WisdomBanner } from "@/components/WisdomBanner";
 import { LevelBar } from "@/components/LevelBar";
 import { PillarCard } from "@/components/PillarCard";
 import { PenaltyButtons } from "@/components/PenaltyButtons";
 import { ConfettiOverlay } from "@/components/ConfettiOverlay";
+import { BottomNav } from "@/components/BottomNav";
 
 const Index = () => {
+  const { profile } = useAuth();
   const {
     completed,
     toggleQuest,
@@ -19,7 +22,7 @@ const Index = () => {
   } = useQuestEngine();
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-20">
       {confetti && <ConfettiOverlay />}
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -33,7 +36,7 @@ const Index = () => {
             Nur al-BinDjib
           </h1>
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-            Sultan Engine V2 — Système de Quêtes
+            Sultan Engine V3 — {profile?.role === "guardian" ? "La Gardienne 🛡️" : "Le Guide 🧭"}
           </p>
         </motion.div>
 
@@ -52,6 +55,10 @@ const Index = () => {
           <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= 120 ? "glow-border-gold" : ""}`}>
             <p className="text-xs text-muted-foreground">Parfait</p>
             <p className={`text-lg font-bold ${dailyXp >= 120 ? "text-accent" : "text-foreground"}`}>120 XP</p>
+          </div>
+          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= 150 ? "glow-border-gold" : ""}`}>
+            <p className="text-xs text-muted-foreground">Baraka</p>
+            <p className={`text-lg font-bold ${dailyXp >= 150 ? "text-accent" : "text-foreground"}`}>150 XP</p>
           </div>
         </div>
 
@@ -81,6 +88,7 @@ const Index = () => {
           <p className="text-[10px] text-muted-foreground/50">La constance {">"} la motivation</p>
         </div>
       </div>
+      <BottomNav />
     </div>
   );
 };
