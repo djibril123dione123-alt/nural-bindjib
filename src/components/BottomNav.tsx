@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { path: "/deep-work", icon: "🎯", label: "Focus" },
   { path: "/journal", icon: "🌙", label: "Journal" },
   { path: "/chat", icon: "💬", label: "Duo" },
+  { path: "/profile", icon: "👤", label: "Profil" },
 ];
 
 export function BottomNav() {
