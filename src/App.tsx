@@ -9,6 +9,8 @@ import Auth from "./pages/Auth.tsx";
 import DeepWork from "./pages/DeepWork.tsx";
 import DuoChat from "./pages/DuoChat.tsx";
 import Profile from "./pages/Profile.tsx";
+import HifzTracker from "./pages/HifzTracker.tsx";
+import JournalSakinah from "./pages/JournalSakinah.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -27,6 +29,8 @@ const AppRoutes = () => (
     <Route path="/deep-work" element={<ProtectedRoute><DeepWork /></ProtectedRoute>} />
     <Route path="/chat" element={<ProtectedRoute><DuoChat /></ProtectedRoute>} />
     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+    <Route path="/hifz" element={<ProtectedRoute><HifzTracker /></ProtectedRoute>} />
+    <Route path="/journal" element={<ProtectedRoute><JournalSakinah /></ProtectedRoute>} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );

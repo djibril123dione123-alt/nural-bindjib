@@ -68,6 +68,84 @@ export type Database = {
         }
         Relationships: []
       }
+      hifz_progress: {
+        Row: {
+          created_at: string | null
+          end_verse: number
+          id: string
+          last_reviewed: string | null
+          percentage: number | null
+          review_count: number | null
+          start_verse: number
+          surah_name: string
+          surah_number: number
+          total_verses: number
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          end_verse?: number
+          id?: string
+          last_reviewed?: string | null
+          percentage?: number | null
+          review_count?: number | null
+          start_verse?: number
+          surah_name: string
+          surah_number: number
+          total_verses?: number
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          end_verse?: number
+          id?: string
+          last_reviewed?: string | null
+          percentage?: number | null
+          review_count?: number | null
+          start_verse?: number
+          surah_name?: string
+          surah_number?: number
+          total_verses?: number
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      journal_entries: {
+        Row: {
+          content: string
+          created_at: string | null
+          id: string
+          mood_score: number | null
+          prompt_used: string | null
+          updated_at: string | null
+          user_id: string
+          visibility: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          mood_score?: number | null
+          prompt_used?: string | null
+          updated_at?: string | null
+          user_id: string
+          visibility?: string
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          id?: string
+          mood_score?: number | null
+          prompt_used?: string | null
+          updated_at?: string | null
+          user_id?: string
+          visibility?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_emoji: string | null
