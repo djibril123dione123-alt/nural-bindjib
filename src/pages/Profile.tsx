@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
+import { TodoList } from "@/components/TodoList";
 import { toast } from "sonner";
 
 const Profile = () => {
