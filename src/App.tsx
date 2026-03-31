@@ -11,6 +11,9 @@ import DuoChat from "./pages/DuoChat.tsx";
 import Profile from "./pages/Profile.tsx";
 import HifzTracker from "./pages/HifzTracker.tsx";
 import JournalSakinah from "./pages/JournalSakinah.tsx";
+import Tazkiyah from "./pages/Tazkiyah.tsx";
+import SalatTracker from "./pages/SalatTracker.tsx";
+import BilanSoir from "./pages/BilanSoir.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
