@@ -34,6 +34,9 @@ const AppRoutes = () => (
     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
     <Route path="/hifz" element={<ProtectedRoute><HifzTracker /></ProtectedRoute>} />
     <Route path="/journal" element={<ProtectedRoute><JournalSakinah /></ProtectedRoute>} />
+    <Route path="/tazkiyah" element={<ProtectedRoute><Tazkiyah /></ProtectedRoute>} />
+    <Route path="/salat" element={<ProtectedRoute><SalatTracker /></ProtectedRoute>} />
+    <Route path="/bilan" element={<ProtectedRoute><BilanSoir /></ProtectedRoute>} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );

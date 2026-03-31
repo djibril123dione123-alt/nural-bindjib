@@ -116,6 +116,19 @@ const Profile = () => {
           </div>
         </motion.div>
 
+        {/* Personal todos */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="glass rounded-xl p-5 space-y-3"
+        >
+          <h3 className="text-sm font-display font-semibold text-foreground uppercase tracking-wider">
+            📋 Mes Tâches
+          </h3>
+          <TodoList />
+        </motion.div>
+
         {/* Sign out */}
         <motion.button
           whileTap={{ scale: 0.97 }}
