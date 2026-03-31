@@ -11,6 +11,9 @@ import DuoChat from "./pages/DuoChat.tsx";
 import Profile from "./pages/Profile.tsx";
 import HifzTracker from "./pages/HifzTracker.tsx";
 import JournalSakinah from "./pages/JournalSakinah.tsx";
+import Tazkiyah from "./pages/Tazkiyah.tsx";
+import SalatTracker from "./pages/SalatTracker.tsx";
+import BilanSoir from "./pages/BilanSoir.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -31,6 +34,9 @@ const AppRoutes = () => (
     <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
     <Route path="/hifz" element={<ProtectedRoute><HifzTracker /></ProtectedRoute>} />
     <Route path="/journal" element={<ProtectedRoute><JournalSakinah /></ProtectedRoute>} />
+    <Route path="/tazkiyah" element={<ProtectedRoute><Tazkiyah /></ProtectedRoute>} />
+    <Route path="/salat" element={<ProtectedRoute><SalatTracker /></ProtectedRoute>} />
+    <Route path="/bilan" element={<ProtectedRoute><BilanSoir /></ProtectedRoute>} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );

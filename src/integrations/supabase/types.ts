@@ -173,6 +173,99 @@ export type Database = {
         }
         Relationships: []
       }
+      salat_tracking: {
+        Row: {
+          completed: boolean
+          completed_at: string | null
+          created_at: string | null
+          custom_time: string | null
+          date: string
+          id: string
+          on_time: boolean | null
+          prayer_name: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string | null
+          custom_time?: string | null
+          date?: string
+          id?: string
+          on_time?: boolean | null
+          prayer_name: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          completed_at?: string | null
+          created_at?: string | null
+          custom_time?: string | null
+          date?: string
+          id?: string
+          on_time?: boolean | null
+          prayer_name?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      tazkiyah_challenges: {
+        Row: {
+          challenge_type: string
+          completed: boolean
+          created_at: string | null
+          date: string
+          day_number: number
+          id: string
+          user_id: string
+        }
+        Insert: {
+          challenge_type: string
+          completed?: boolean
+          created_at?: string | null
+          date?: string
+          day_number?: number
+          id?: string
+          user_id: string
+        }
+        Update: {
+          challenge_type?: string
+          completed?: boolean
+          created_at?: string | null
+          date?: string
+          day_number?: number
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_todos: {
+        Row: {
+          completed: boolean
+          created_at: string | null
+          id: string
+          title: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          created_at?: string | null
+          id?: string
+          title: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          created_at?: string | null
+          id?: string
+          title?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

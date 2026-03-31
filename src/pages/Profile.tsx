@@ -2,6 +2,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
+import { TodoList } from "@/components/TodoList";
 import { toast } from "sonner";
 
 const Profile = () => {
@@ -113,6 +114,19 @@ const Profile = () => {
               <p className="text-[10px] text-muted-foreground">Force & Sagesse</p>
             </div>
           </div>
+        </motion.div>
+
+        {/* Personal todos */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="glass rounded-xl p-5 space-y-3"
+        >
+          <h3 className="text-sm font-display font-semibold text-foreground uppercase tracking-wider">
+            📋 Mes Tâches
+          </h3>
+          <TodoList />
         </motion.div>
 
         {/* Sign out */}

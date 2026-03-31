@@ -3,10 +3,10 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
   { path: "/", icon: "⚔️", label: "Quêtes" },
+  { path: "/salat", icon: "🕌", label: "Salat" },
+  { path: "/tazkiyah", icon: "✨", label: "Tazkiyah" },
   { path: "/hifz", icon: "📖", label: "Hifz" },
-  { path: "/deep-work", icon: "🎯", label: "Focus" },
-  { path: "/journal", icon: "🌙", label: "Journal" },
-  { path: "/chat", icon: "💬", label: "Duo" },
+  { path: "/bilan", icon: "🌙", label: "Bilan" },
   { path: "/profile", icon: "👤", label: "Profil" },
 ];
 
