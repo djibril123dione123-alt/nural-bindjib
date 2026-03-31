@@ -3,8 +3,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BottomNav } from "@/components/BottomNav";
+import { CircularProgress } from "@/components/CircularProgress";
+import { GoldenParticles, useParticles } from "@/components/GoldenParticles";
 import { SURAHS } from "@/lib/surahData";
 import { toast } from "sonner";
+
+const TOTAL_VERSES = 6236;
+const JUZ_COUNT = 30;
 
 interface HifzEntry {
   id: string;
@@ -25,29 +30,21 @@ const HifzTracker = () => {
   const [startVerse, setStartVerse] = useState(1);
   const [endVerse, setEndVerse] = useState(1);
   const [showForm, setShowForm] = useState(false);
+  const [showReview, setShowReview] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const { trigger, fire } = useParticles();
 
   const filteredSurahs = useMemo(() => {
     if (!searchQuery) return SURAHS;
     const q = searchQuery.toLowerCase();
-    return SURAHS.filter(s =>
-      s.name.toLowerCase().includes(q) ||
-      s.arabicName.includes(q) ||
-      String(s.number).includes(q)
-    );
+    return SURAHS.filter(s => s.name.toLowerCase().includes(q) || s.arabicName.includes(q) || String(s.number).includes(q));
   }, [searchQuery]);
 
-  useEffect(() => {
-    loadEntries();
-  }, [user]);
+  useEffect(() => { if (user) loadEntries(); }, [user]);
 
   const loadEntries = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from("hifz_progress")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("updated_at", { ascending: false });
+    const { data } = await supabase.from("hifz_progress").select("*").eq("user_id", user.id).order("updated_at", { ascending: false });
     if (data) setEntries(data as unknown as HifzEntry[]);
   };
 
@@ -58,39 +55,20 @@ const HifzTracker = () => {
 
   const addEntry = async () => {
     if (!user) return;
-    if (endVerse < startVerse) {
-      toast.error("Le verset de fin doit être ≥ au verset de début");
-      return;
-    }
-
+    if (endVerse < startVerse) { toast.error("Verset fin ≥ verset début"); return; }
     const { error } = await supabase.from("hifz_progress").insert({
-      user_id: user.id,
-      surah_number: selectedSurah.number,
-      surah_name: selectedSurah.name,
-      start_verse: startVerse,
-      end_verse: endVerse,
-      total_verses: selectedSurah.verses,
-      percentage,
+      user_id: user.id, surah_number: selectedSurah.number, surah_name: selectedSurah.name,
+      start_verse: startVerse, end_verse: endVerse, total_verses: selectedSurah.verses, percentage,
     });
-
-    if (error) {
-      toast.error("Erreur lors de l'ajout");
-    } else {
-      toast.success(`${selectedSurah.name} ajouté au Hifz ! +25 Baraka`);
-      setShowForm(false);
-      setStartVerse(1);
-      setEndVerse(1);
-      loadEntries();
-    }
+    if (!error) { fire(); toast.success(`${selectedSurah.name} ajouté ! +25 Baraka`); setShowForm(false); loadEntries(); }
   };
 
   const reviewEntry = async (entry: HifzEntry) => {
     await supabase.from("hifz_progress").update({
-      last_reviewed: new Date().toISOString(),
-      review_count: entry.review_count + 1,
-      updated_at: new Date().toISOString(),
+      last_reviewed: new Date().toISOString(), review_count: entry.review_count + 1, updated_at: new Date().toISOString(),
     }).eq("id", entry.id);
-    toast.success(`Révision de ${entry.surah_name} enregistrée ✨`);
+    fire();
+    toast.success(`Révision de ${entry.surah_name} ✨`);
     loadEntries();
   };
 
@@ -101,157 +79,166 @@ const HifzTracker = () => {
 
   const totalProgress = useMemo(() => {
     if (entries.length === 0) return 0;
-    const totalVersesMemorized = entries.reduce((sum, e) => sum + (e.end_verse - e.start_verse + 1), 0);
-    const totalVerses = 6236;
-    return Math.round((totalVersesMemorized / totalVerses) * 10000) / 100;
+    const versesMemorized = entries.reduce((sum, e) => sum + (e.end_verse - e.start_verse + 1), 0);
+    return Math.round((versesMemorized / TOTAL_VERSES) * 10000) / 100;
   }, [entries]);
 
-  const daysSinceReview = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
-    return Math.floor(diff / (1000 * 60 * 60 * 24));
-  };
+  const totalVersesMemorized = entries.reduce((sum, e) => sum + (e.end_verse - e.start_verse + 1), 0);
+
+  const daysSinceReview = (dateStr: string) => Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+
+  // SRS suggestions: sort by urgency (days since last review * inverse of review count)
+  const srsEntries = useMemo(() => {
+    return [...entries]
+      .map(e => ({ ...e, days: daysSinceReview(e.last_reviewed), urgency: daysSinceReview(e.last_reviewed) / Math.max(e.review_count, 1) }))
+      .filter(e => e.days >= 2)
+      .sort((a, b) => b.urgency - a.urgency)
+      .slice(0, 5);
+  }, [entries]);
+
+  // Juz progress visualization (simplified: assume uniform distribution)
+  const juzProgress = useMemo(() => {
+    const versesPerJuz = Math.ceil(TOTAL_VERSES / JUZ_COUNT);
+    return Array.from({ length: JUZ_COUNT }, (_, i) => {
+      const juzStart = i * versesPerJuz;
+      const juzEnd = Math.min((i + 1) * versesPerJuz, TOTAL_VERSES);
+      // This is simplified — in reality Juz boundaries don't align perfectly with surah boundaries
+      const overlap = Math.min(totalVersesMemorized, juzEnd) - Math.min(totalVersesMemorized, juzStart);
+      return Math.max(0, Math.min(100, (overlap / (juzEnd - juzStart)) * 100));
+    });
+  }, [totalVersesMemorized]);
 
   return (
-    <div className="min-h-screen bg-background pb-20">
+    <div className="min-h-screen bg-background pb-20 relative overflow-hidden">
+      <GoldenParticles trigger={trigger} />
+
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center space-y-1"
-        >
-          <h1 className="text-2xl font-display font-bold text-foreground">🕌 Hifz Tracker</h1>
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-1">
+          <h1 className="text-2xl font-display font-bold text-gradient-emerald">📖 Hifz Tracker</h1>
           <p className="text-xs text-muted-foreground">Mémorisation du Saint Coran</p>
         </motion.div>
 
-        {/* Global progress */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass rounded-xl p-5 space-y-3 glow-border-gold"
-        >
-          <div className="flex justify-between items-center">
-            <span className="text-xs uppercase tracking-wider text-muted-foreground">Progression globale</span>
-            <span className="text-lg font-bold text-accent">{totalProgress}%</span>
-          </div>
-          <div className="h-3 rounded-full bg-secondary overflow-hidden">
-            <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-accent/80 to-accent"
-              initial={{ width: 0 }}
-              animate={{ width: `${totalProgress}%` }}
-              transition={{ duration: 1, ease: "easeOut" }}
-              style={{ boxShadow: "0 0 12px rgba(212, 175, 55, 0.5)" }}
-            />
-          </div>
-          <div className="flex justify-between text-[10px] text-muted-foreground">
-            <span>{entries.length} sourates en cours</span>
-            <span>6236 versets total</span>
+        {/* Global Progress with Circular */}
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-2xl p-6 glow-border-gold">
+          <div className="flex items-center gap-6">
+            <CircularProgress value={totalProgress} max={100} size={100} strokeWidth={8} glowColor="var(--glow-gold)">
+              <div className="text-center">
+                <p className="text-lg font-bold text-accent">{totalProgress}%</p>
+                <p className="text-[7px] text-muted-foreground uppercase">Coran</p>
+              </div>
+            </CircularProgress>
+            <div className="flex-1 space-y-2">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{entries.length} sourates</span>
+                <span>{totalVersesMemorized}/{TOTAL_VERSES} versets</span>
+              </div>
+              {/* Juz visualizer */}
+              <div className="grid grid-cols-15 gap-[2px]">
+                {juzProgress.map((pct, i) => (
+                  <div key={i} className="h-3 rounded-sm transition-all" style={{
+                    background: pct > 0 ? `linear-gradient(to top, hsl(var(--primary)) ${pct}%, hsl(var(--secondary)) ${pct}%)` : "hsl(var(--secondary))",
+                    boxShadow: pct > 50 ? "0 0 4px rgba(16, 185, 129, 0.3)" : undefined
+                  }} title={`Juz ${i + 1}: ${Math.round(pct)}%`} />
+                ))}
+              </div>
+              <p className="text-[8px] text-muted-foreground text-center">30 Juz du Mushaf</p>
+            </div>
           </div>
         </motion.div>
 
-        {/* Add button */}
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          onClick={() => setShowForm(!showForm)}
-          className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-semibold text-sm"
-        >
-          {showForm ? "Annuler" : "+ Ajouter une sourate"}
-        </motion.button>
+        {/* Action Buttons */}
+        <div className="grid grid-cols-2 gap-3">
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setShowForm(!showForm); setShowReview(false); }}
+            className="py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-sm">
+            {showForm ? "Annuler" : "+ Ajouter"}
+          </motion.button>
+          <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setShowReview(!showReview); setShowForm(false); }}
+            className={`py-3 rounded-xl font-bold text-sm border-2 transition-all ${
+              showReview ? "border-accent bg-accent/10 text-accent" : "border-border text-foreground"
+            }`}>
+            🔄 Révision SRS {srsEntries.length > 0 && <span className="ml-1 bg-accent text-primary-foreground text-[9px] px-1.5 py-0.5 rounded-full">{srsEntries.length}</span>}
+          </motion.button>
+        </div>
+
+        {/* SRS Review Mode */}
+        <AnimatePresence>
+          {showReview && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden space-y-3">
+              <div className="glass rounded-2xl p-4 border border-accent/30">
+                <h3 className="text-xs uppercase tracking-wider text-accent font-bold mb-3">🧠 Répétition Espacée — À réviser</h3>
+                {srsEntries.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-4">Tout est à jour ✨</p>
+                ) : (
+                  <div className="space-y-2">
+                    {srsEntries.map(entry => (
+                      <div key={entry.id} className="flex items-center justify-between bg-secondary/30 rounded-xl p-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{entry.surah_name}</p>
+                          <p className="text-[10px] text-muted-foreground">v.{entry.start_verse}–{entry.end_verse} • {entry.days}j sans révision</p>
+                        </div>
+                        <motion.button whileTap={{ scale: 0.9 }} onClick={() => reviewEntry(entry)}
+                          className="px-3 py-1.5 rounded-lg bg-accent/20 border border-accent/30 text-xs text-accent font-bold">
+                          Réviser ✓
+                        </motion.button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Add form */}
         <AnimatePresence>
           {showForm && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              className="glass rounded-xl p-5 space-y-4 overflow-hidden"
-            >
-              {/* Search */}
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+              className="glass rounded-2xl p-5 space-y-4 overflow-hidden">
+              <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
                 placeholder="Rechercher une sourate..."
-                className="w-full bg-secondary/50 border border-border rounded-lg px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-
-              {/* Surah selector */}
-              <div className="max-h-40 overflow-y-auto space-y-1 rounded-lg">
+                className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+              <div className="max-h-40 overflow-y-auto space-y-1">
                 {filteredSurahs.map(s => (
-                  <button
-                    key={s.number}
-                    onClick={() => {
-                      setSelectedSurah(s);
-                      setStartVerse(1);
-                      setEndVerse(s.verses);
-                      setSearchQuery("");
-                    }}
-                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left text-sm transition-colors ${
-                      selectedSurah.number === s.number
-                        ? "bg-primary/20 border border-primary/30"
-                        : "hover:bg-secondary/80"
-                    }`}
-                  >
+                  <button key={s.number} onClick={() => { setSelectedSurah(s); setStartVerse(1); setEndVerse(s.verses); setSearchQuery(""); }}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors ${
+                      selectedSurah.number === s.number ? "bg-primary/20 border border-primary/30" : "hover:bg-secondary/80"
+                    }`}>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground w-6">{s.number}</span>
                       <span className="text-foreground">{s.name}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted-foreground font-arabic">{s.arabicName}</span>
-                      <span className="text-[10px] text-muted-foreground">{s.verses}v</span>
-                    </div>
+                    <span className="text-[10px] text-muted-foreground">{s.arabicName} • {s.verses}v</span>
                   </button>
                 ))}
               </div>
-
-              {/* Verse range */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Verset début</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={selectedSurah.verses}
-                    value={startVerse}
+                  <input type="number" min={1} max={selectedSurah.verses} value={startVerse}
                     onChange={e => setStartVerse(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
                 </div>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">Verset fin</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={selectedSurah.verses}
-                    value={endVerse}
+                  <input type="number" min={1} max={selectedSurah.verses} value={endVerse}
                     onChange={e => setEndVerse(Math.min(selectedSurah.verses, parseInt(e.target.value) || 1))}
-                    className="w-full bg-secondary/50 border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  />
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
                 </div>
               </div>
-
-              {/* Preview progress */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">
-                    {selectedSurah.name} — {endVerse - startVerse + 1}/{selectedSurah.verses} versets
-                  </span>
+                  <span className="text-muted-foreground">{selectedSurah.name} — {endVerse - startVerse + 1}/{selectedSurah.verses}</span>
                   <span className="text-primary font-bold">{percentage}%</span>
                 </div>
                 <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                  <motion.div
-                    className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
-                    animate={{ width: `${percentage}%` }}
-                    style={{ boxShadow: "0 0 8px rgba(16, 185, 129, 0.4)" }}
-                  />
+                  <motion.div className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
+                    animate={{ width: `${percentage}%` }} style={{ boxShadow: "0 0 8px rgba(16, 185, 129, 0.4)" }} />
                 </div>
               </div>
-
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                onClick={addEntry}
-                className="w-full py-2.5 rounded-lg bg-primary text-primary-foreground font-semibold text-sm"
-              >
+              <motion.button whileTap={{ scale: 0.97 }} onClick={addEntry}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-sm">
                 Ajouter au Hifz
               </motion.button>
             </motion.div>
@@ -264,64 +251,36 @@ const HifzTracker = () => {
             const days = daysSinceReview(entry.last_reviewed);
             const needsReview = days >= 3;
             return (
-              <motion.div
-                key={entry.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`glass rounded-xl p-4 space-y-3 ${needsReview ? "border border-accent/40" : ""}`}
-              >
+              <motion.div key={entry.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className={`glass rounded-2xl p-4 space-y-3 ${needsReview ? "border border-accent/40" : ""}`}>
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-display font-semibold text-foreground text-sm">
-                      {entry.surah_number}. {entry.surah_name}
-                    </h3>
-                    <p className="text-[10px] text-muted-foreground">
-                      Versets {entry.start_verse}–{entry.end_verse} • {entry.review_count} révision{entry.review_count > 1 ? "s" : ""}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <CircularProgress value={Number(entry.percentage)} max={100} size={44} strokeWidth={3}>
+                      <span className="text-[9px] font-bold text-primary">{Math.round(Number(entry.percentage))}</span>
+                    </CircularProgress>
+                    <div>
+                      <h3 className="font-display font-bold text-foreground text-sm">{entry.surah_number}. {entry.surah_name}</h3>
+                      <p className="text-[10px] text-muted-foreground">v.{entry.start_verse}–{entry.end_verse} • {entry.review_count} rév.</p>
+                    </div>
                   </div>
-                  <span className="text-sm font-bold text-primary">{Number(entry.percentage)}%</span>
-                </div>
-
-                <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
-                    style={{
-                      width: `${entry.percentage}%`,
-                      boxShadow: "0 0 8px rgba(16, 185, 129, 0.4)",
-                    }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className={`text-[10px] ${needsReview ? "text-accent font-semibold" : "text-muted-foreground"}`}>
-                    {needsReview ? `⚠️ Révision nécessaire (${days}j)` : `Révisé il y a ${days}j`}
-                  </span>
                   <div className="flex gap-2">
-                    <motion.button
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => reviewEntry(entry)}
-                      className="px-3 py-1 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary"
-                    >
-                      ✓ Révisé
-                    </motion.button>
-                    <motion.button
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => deleteEntry(entry.id)}
-                      className="px-2 py-1 rounded-lg bg-destructive/10 border border-destructive/20 text-xs text-destructive"
-                    >
-                      ✕
-                    </motion.button>
+                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => reviewEntry(entry)}
+                      className="px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-xs text-primary font-semibold">✓ Révisé</motion.button>
+                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => deleteEntry(entry.id)}
+                      className="px-2 py-1.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive">✕</motion.button>
                   </div>
                 </div>
+                {needsReview && (
+                  <p className="text-[10px] text-accent font-semibold">⚠️ Révision nécessaire ({days}j)</p>
+                )}
               </motion.div>
             );
           })}
-
           {entries.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
-              <p className="text-3xl mb-2">📖</p>
-              <p className="text-sm">Commencez votre parcours de mémorisation</p>
-              <p className="text-xs mt-1">« Celui qui lit le Coran et le mémorise... »</p>
+              <p className="text-4xl mb-3">📖</p>
+              <p className="text-sm font-display">Commencez votre parcours</p>
+              <p className="text-xs mt-1 italic">« Celui qui lit le Coran et le mémorise... »</p>
             </div>
           )}
         </div>
