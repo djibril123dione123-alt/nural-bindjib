@@ -11,6 +11,9 @@ export default {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      gridTemplateColumns: {
+        '15': 'repeat(15, minmax(0, 1fr))',
+      },
       fontFamily: {
         display: ['"Playfair Display"', 'serif'],
         body: ['Inter', 'sans-serif'],
