@@ -1,46 +1,145 @@
-import { motion } from "framer-motion";
-import { getLevel, getLevelProgress } from "@/lib/questData";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect } from "react";
+import { getLevelInfo, getRank, ALLIANCE_REWARDS, getMilestoneMessage, type LevelInfo } from "@/lib/questData";
 
 interface LevelBarProps {
   totalXp: number;
   dailyXp: number;
+  role?: "guide" | "guardian";
+  partnerName?: string;
 }
 
-export function LevelBar({ totalXp, dailyXp }: LevelBarProps) {
-  const level = getLevel(totalXp);
-  const progress = getLevelProgress(totalXp);
+export function LevelBar({ totalXp, dailyXp, role = "guide", partnerName = "Partenaire" }: LevelBarProps) {
+  const info = getLevelInfo(totalXp, role);
+  const [showMilestone, setShowMilestone] = useState(false);
+  const [prevLevel, setPrevLevel] = useState(info.level);
+
+  // Detect level-up milestone
+  useEffect(() => {
+    if (info.level > prevLevel && info.level % 5 === 0) {
+      setShowMilestone(true);
+      setTimeout(() => setShowMilestone(false), 4000);
+    }
+    setPrevLevel(info.level);
+  }, [info.level, prevLevel]);
+
+  const size = 120;
+  const strokeWidth = 8;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const offset = circumference - (info.progress / 100) * circumference;
+
+  const rankColor = `hsl(${info.rank.color})`;
+  const nextReward = ALLIANCE_REWARDS.find(r => r.level > info.level);
 
   return (
-    <div className="glass rounded-lg p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{level.emoji}</span>
-          <div>
-            <p className="text-xs uppercase tracking-widest text-muted-foreground">
-              Niveau {level.level}
+    <div className="glass rounded-xl p-5 space-y-4">
+      {/* Milestone popup */}
+      <AnimatePresence>
+        {showMilestone && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: -20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, y: -20 }}
+            className="glass glow-border-gold rounded-lg p-4 text-center space-y-2"
+          >
+            <p className="text-2xl">🎉</p>
+            <p className="font-display text-accent text-lg">Milestone Niveau {info.level} !</p>
+            <p className="text-sm text-muted-foreground">
+              {getMilestoneMessage(info.level, partnerName)}
             </p>
-            <p className="font-display text-lg text-foreground">{level.title}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex items-center gap-5">
+        {/* Circular Progress */}
+        <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+          <svg width={size} height={size} className="-rotate-90">
+            <circle
+              cx={size / 2} cy={size / 2} r={radius}
+              fill="none"
+              stroke="hsl(var(--secondary))"
+              strokeWidth={strokeWidth}
+            />
+            <motion.circle
+              cx={size / 2} cy={size / 2} r={radius}
+              fill="none"
+              stroke={rankColor}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              initial={{ strokeDashoffset: circumference }}
+              animate={{ strokeDashoffset: offset }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              style={{
+                filter: info.progress >= 80
+                  ? `drop-shadow(0 0 8px ${rankColor})`
+                  : undefined
+              }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-2xl font-bold" style={{ color: rankColor }}>{info.level}</span>
+            <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
+              {info.rank.name}
+            </span>
           </div>
         </div>
-        <div className="text-right">
-          <p className="text-2xl font-bold text-primary">{totalXp} <span className="text-sm text-muted-foreground">XP</span></p>
-          <p className="text-xs text-muted-foreground">Aujourd'hui : +{dailyXp} XP</p>
+
+        {/* Info */}
+        <div className="flex-1 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{info.emoji}</span>
+            <div>
+              <p className="font-display text-base text-foreground leading-tight">{info.title}</p>
+              <p className="text-xs text-muted-foreground">
+                {info.rank.emoji} Rang {info.rank.name}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-primary">{totalXp}</span>
+            <span className="text-xs text-muted-foreground">XP total</span>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>+{dailyXp} aujourd'hui</span>
+            <span>•</span>
+            <span>{info.xpForNext - totalXp} XP → Lvl {Math.min(info.level + 1, 150)}</span>
+          </div>
         </div>
       </div>
 
-      <div className="h-2 rounded-full bg-secondary overflow-hidden">
-        <motion.div
-          className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
-          initial={{ width: 0 }}
-          animate={{ width: `${progress}%` }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        />
+      {/* Rank progress bar */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>Lvl {info.level} — {info.xpForCurrent} XP</span>
+          <span>{info.level >= 150 ? "MAX" : `Lvl ${info.level + 1} — ${info.xpForNext} XP`}</span>
+        </div>
+        <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+          <motion.div
+            className="h-full rounded-full"
+            style={{ backgroundColor: rankColor }}
+            initial={{ width: 0 }}
+            animate={{ width: `${info.progress}%` }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          />
+        </div>
       </div>
 
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{level.minXp} XP</span>
-        <span>{level.maxXp === Infinity ? "∞" : `${level.maxXp} XP`}</span>
-      </div>
+      {/* Next Alliance Reward */}
+      {nextReward && (
+        <div className="flex items-center gap-3 glass rounded-lg p-2.5">
+          <span className="text-lg">{nextReward.emoji}</span>
+          <div className="flex-1">
+            <p className="text-xs font-medium text-foreground">{nextReward.title}</p>
+            <p className="text-[10px] text-muted-foreground">{nextReward.description}</p>
+          </div>
+          <span className="text-xs font-bold text-accent">Lvl {nextReward.level}</span>
+        </div>
+      )}
     </div>
   );
 }
