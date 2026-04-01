@@ -45,6 +45,7 @@ function AnimatedRoutes() {
         <Routes location={location}>
           <Route path="/auth" element={<Auth />} />
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+          <Route path="/lab" element={<ProtectedRoute><AlterEgoLab /></ProtectedRoute>} />
           <Route path="/deep-work" element={<ProtectedRoute><DeepWork /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute><DuoChat /></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />

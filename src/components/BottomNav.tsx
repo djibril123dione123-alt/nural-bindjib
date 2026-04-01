@@ -3,8 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
   { path: "/", icon: "⚔️", label: "Quêtes" },
+  { path: "/lab", icon: "🪞", label: "Lab" },
   { path: "/salat", icon: "🕌", label: "Salat" },
-  { path: "/tazkiyah", icon: "✨", label: "Tazkiyah" },
   { path: "/hifz", icon: "📖", label: "Hifz" },
   { path: "/bilan", icon: "🌙", label: "Bilan" },
   { path: "/profile", icon: "👤", label: "Profil" },
