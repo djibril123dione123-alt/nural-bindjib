@@ -14,6 +14,96 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_feed: {
+        Row: {
+          action: string
+          created_at: string | null
+          id: string
+          user_id: string
+          xp_earned: number | null
+        }
+        Insert: {
+          action: string
+          created_at?: string | null
+          id?: string
+          user_id: string
+          xp_earned?: number | null
+        }
+        Update: {
+          action?: string
+          created_at?: string | null
+          id?: string
+          user_id?: string
+          xp_earned?: number | null
+        }
+        Relationships: []
+      }
+      alter_ego_missions: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          description: string | null
+          from_user_id: string
+          id: string
+          proof_url: string | null
+          status: string
+          title: string
+          to_user_id: string
+          xp: number
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          description?: string | null
+          from_user_id: string
+          id?: string
+          proof_url?: string | null
+          status?: string
+          title: string
+          to_user_id: string
+          xp?: number
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          description?: string | null
+          from_user_id?: string
+          id?: string
+          proof_url?: string | null
+          status?: string
+          title?: string
+          to_user_id?: string
+          xp?: number
+        }
+        Relationships: []
+      }
+      custom_quests: {
+        Row: {
+          category: string
+          created_at: string | null
+          id: string
+          title: string
+          user_id: string
+          xp: number
+        }
+        Insert: {
+          category?: string
+          created_at?: string | null
+          id?: string
+          title: string
+          user_id: string
+          xp?: number
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          id?: string
+          title?: string
+          user_id?: string
+          xp?: number
+        }
+        Relationships: []
+      }
       daily_progress: {
         Row: {
           completed_quests: Json | null
