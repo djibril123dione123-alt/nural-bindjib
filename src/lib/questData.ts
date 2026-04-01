@@ -155,14 +155,14 @@ export interface RankInfo {
   emoji: string;
   minLevel: number;
   maxLevel: number;
-  color: string; // CSS hsl variable
+  color: string;
 }
 
 export const RANKS: RankInfo[] = [
-  { id: "bronze", name: "Bronze", emoji: "🥉", minLevel: 1, maxLevel: 30, color: "30 60% 50%" },
-  { id: "silver", name: "Argent", emoji: "🥈", minLevel: 31, maxLevel: 70, color: "0 0% 70%" },
-  { id: "gold", name: "Or", emoji: "🥇", minLevel: 71, maxLevel: 110, color: "43 69% 53%" },
-  { id: "diamond", name: "Diamant", emoji: "💎", minLevel: 111, maxLevel: 150, color: "160 72% 50%" },
+  { id: "bronze", name: "Novice", emoji: "🥉", minLevel: 1, maxLevel: 20, color: "30 60% 50%" },
+  { id: "silver", name: "Sentinelle", emoji: "🥈", minLevel: 21, maxLevel: 50, color: "0 0% 70%" },
+  { id: "gold", name: "Architecte", emoji: "🥇", minLevel: 51, maxLevel: 90, color: "43 69% 53%" },
+  { id: "diamond", name: "Khalifa", emoji: "💎", minLevel: 91, maxLevel: 150, color: "160 72% 50%" },
 ];
 
 // Title mapping by level range (different for each role)
