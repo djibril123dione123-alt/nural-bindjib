@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { PILLARS } from "@/lib/questData";
+import { PILLARS, getPillarsForRole, type Pillar } from "@/lib/questData";
 import { supabase } from "@/integrations/supabase/client";
 
 const STORAGE_KEY = "nur-albindjib-quests";

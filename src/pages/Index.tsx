@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { PILLARS } from "@/lib/questData";
+import { getPillarsForRole } from "@/lib/questData";
 import { useQuestEngine } from "@/hooks/useQuestEngine";
 import { useAuth } from "@/hooks/useAuth";
 import { WisdomBanner } from "@/components/WisdomBanner";
@@ -11,6 +11,9 @@ import { BottomNav } from "@/components/BottomNav";
 
 const Index = () => {
   const { profile } = useAuth();
+  const role = (profile?.role as "guide" | "guardian") || "guide";
+  const pillars = getPillarsForRole(role);
+
   const {
     completed,
     toggleQuest,
@@ -20,6 +23,11 @@ const Index = () => {
     applyPenalty,
     confetti,
   } = useQuestEngine();
+
+  const isGuardian = role === "guardian";
+  const minTarget = isGuardian ? 100 : 80;
+  const perfectTarget = isGuardian ? 200 : 120;
+  const barakaTarget = isGuardian ? 300 : 150;
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -36,34 +44,39 @@ const Index = () => {
             Nur al-BinDjib
           </h1>
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-            Sultan Engine V3 — {profile?.role === "guardian" ? "La Gardienne 🛡️" : "Le Guide 🧭"}
+            Sultan Engine V3 — {isGuardian ? "La Gardienne 🛡️" : "Le Guide 🧭"}
           </p>
         </motion.div>
 
         {/* Wisdom */}
         <WisdomBanner />
 
-        {/* Level */}
-        <LevelBar totalXp={totalXp} dailyXp={dailyXp} />
+        {/* Level — V3 circular */}
+        <LevelBar
+          totalXp={totalXp}
+          dailyXp={dailyXp}
+          role={role}
+          partnerName={isGuardian ? "Djibril" : "Binta"}
+        />
 
         {/* Daily targets */}
         <div className="flex gap-3">
-          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= 80 ? "glow-border-emerald" : ""}`}>
+          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= minTarget ? "glow-border-emerald" : ""}`}>
             <p className="text-xs text-muted-foreground">Minimum</p>
-            <p className={`text-lg font-bold ${dailyXp >= 80 ? "text-primary" : "text-foreground"}`}>80 XP</p>
+            <p className={`text-lg font-bold ${dailyXp >= minTarget ? "text-primary" : "text-foreground"}`}>{minTarget} XP</p>
           </div>
-          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= 120 ? "glow-border-gold" : ""}`}>
+          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= perfectTarget ? "glow-border-gold" : ""}`}>
             <p className="text-xs text-muted-foreground">Parfait</p>
-            <p className={`text-lg font-bold ${dailyXp >= 120 ? "text-accent" : "text-foreground"}`}>120 XP</p>
+            <p className={`text-lg font-bold ${dailyXp >= perfectTarget ? "text-accent" : "text-foreground"}`}>{perfectTarget} XP</p>
           </div>
-          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= 150 ? "glow-border-gold" : ""}`}>
+          <div className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= barakaTarget ? "glow-border-gold" : ""}`}>
             <p className="text-xs text-muted-foreground">Baraka</p>
-            <p className={`text-lg font-bold ${dailyXp >= 150 ? "text-accent" : "text-foreground"}`}>150 XP</p>
+            <p className={`text-lg font-bold ${dailyXp >= barakaTarget ? "text-accent" : "text-foreground"}`}>{barakaTarget} XP</p>
           </div>
         </div>
 
         {/* Pillars */}
-        {PILLARS.map((pillar, i) => (
+        {pillars.map((pillar, i) => (
           <motion.div
             key={pillar.id}
             initial={{ opacity: 0, y: 20 }}
