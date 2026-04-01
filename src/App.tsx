@@ -15,6 +15,7 @@ import JournalSakinah from "./pages/JournalSakinah";
 import Tazkiyah from "./pages/Tazkiyah";
 import SalatTracker from "./pages/SalatTracker";
 import BilanSoir from "./pages/BilanSoir";
+import AlterEgoLab from "./pages/AlterEgoLab";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
