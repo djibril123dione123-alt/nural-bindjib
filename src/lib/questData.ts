@@ -155,51 +155,51 @@ export interface RankInfo {
   emoji: string;
   minLevel: number;
   maxLevel: number;
-  color: string; // CSS hsl variable
+  color: string;
 }
 
 export const RANKS: RankInfo[] = [
-  { id: "bronze", name: "Bronze", emoji: "🥉", minLevel: 1, maxLevel: 30, color: "30 60% 50%" },
-  { id: "silver", name: "Argent", emoji: "🥈", minLevel: 31, maxLevel: 70, color: "0 0% 70%" },
-  { id: "gold", name: "Or", emoji: "🥇", minLevel: 71, maxLevel: 110, color: "43 69% 53%" },
-  { id: "diamond", name: "Diamant", emoji: "💎", minLevel: 111, maxLevel: 150, color: "160 72% 50%" },
+  { id: "bronze", name: "Novice", emoji: "🥉", minLevel: 1, maxLevel: 20, color: "30 60% 50%" },
+  { id: "silver", name: "Sentinelle", emoji: "🥈", minLevel: 21, maxLevel: 50, color: "0 0% 70%" },
+  { id: "gold", name: "Architecte", emoji: "🥇", minLevel: 51, maxLevel: 90, color: "43 69% 53%" },
+  { id: "diamond", name: "Khalifa", emoji: "💎", minLevel: 91, maxLevel: 150, color: "160 72% 50%" },
 ];
 
 // Title mapping by level range (different for each role)
 const GUIDE_TITLES: [number, string, string][] = [
-  [1, "Apprenti Murid", "🌱"],
-  [11, "Gardien de la Discipline", "🛡️"],
-  [21, "Architecte du Destin", "🔧"],
-  [31, "Étoile de l'Istiqamah", "✨"],
-  [41, "Maître du Focus", "🎯"],
-  [51, "Forgeron de l'Âme", "⚒️"],
-  [61, "Sage du Savoir", "📖"],
-  [71, "Sultan de l'Excellence", "👑"],
-  [81, "Lumière de la Oumma", "🌟"],
-  [91, "Commandeur de l'Alliance", "⚔️"],
-  [101, "Khalifa de la Constance", "🏛️"],
-  [111, "Légende Vivante", "🔥"],
-  [121, "Architecte du Futur", "🌌"],
-  [131, "Élu de la Baraka", "✨"],
-  [141, "Sultan Éternel", "👑"],
+  [1, "Novice Murid", "🌱"],
+  [11, "Apprenti Gardien", "🛡️"],
+  [21, "Sentinelle du Focus", "⚔️"],
+  [31, "Sentinelle de l'Effort", "🎯"],
+  [41, "Sentinelle Suprême", "🔥"],
+  [51, "Architecte du Destin", "🔧"],
+  [61, "Architecte du Savoir", "📖"],
+  [71, "Architecte Suprême", "🏗️"],
+  [81, "Architecte de l'Âme", "✨"],
+  [91, "Souverain de l'Alliance", "👑"],
+  [101, "Souverain du Focus", "🌟"],
+  [111, "Souverain Suprême", "⚡"],
+  [121, "Souverain Éternel", "🔱"],
+  [131, "Khalifa de la Constance", "🏛️"],
+  [141, "Khalifa Ultime", "👑"],
 ];
 
 const GUARDIAN_TITLES: [number, string, string][] = [
-  [1, "Apprentie Murid", "🌱"],
-  [11, "Gardienne de la Paix", "🛡️"],
-  [21, "Étoile Montante", "⭐"],
-  [31, "Étoile de l'Istiqamah", "✨"],
-  [41, "Maîtresse du Focus", "🎯"],
-  [51, "Perle de Sagesse", "📖"],
-  [61, "Flamme de la Détermination", "🔥"],
-  [71, "Reine de l'Alliance", "👑"],
-  [81, "Lumière de la Sérénité", "🌟"],
-  [91, "Impératrice du Savoir", "📚"],
-  [101, "Khalifa de la Grâce", "🏛️"],
-  [111, "Légende de la Baraka", "💎"],
-  [121, "Architecte des Rêves", "🌌"],
-  [131, "Étoile du Destin", "✨"],
-  [141, "Sultane du Destin", "👑"],
+  [1, "Novice Murid", "🌱"],
+  [11, "Apprentie Gardienne", "🛡️"],
+  [21, "Sentinelle de la Paix", "⭐"],
+  [31, "Sentinelle de la Grâce", "✨"],
+  [41, "Sentinelle Suprême", "🔥"],
+  [51, "Architecte des Rêves", "🔧"],
+  [61, "Architecte du Savoir", "📖"],
+  [71, "Architecte de la Sérénité", "🏗️"],
+  [81, "Architecte Suprême", "💫"],
+  [91, "Souveraine de l'Alliance", "👑"],
+  [101, "Souveraine du Focus", "🌟"],
+  [111, "Souveraine Suprême", "⚡"],
+  [121, "Souveraine Éternelle", "🔱"],
+  [131, "Khalifa de la Grâce", "🏛️"],
+  [141, "Khalifa Ultime", "👑"],
 ];
 
 // Alliance Pass Rewards
