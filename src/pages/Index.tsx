@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { getPillarsForRole } from "@/lib/questData";
 import { useQuestEngine } from "@/hooks/useQuestEngine";
 import { useAuth } from "@/hooks/useAuth";
+import { useRoleTheme } from "@/hooks/useRoleTheme";
 import { WisdomBanner } from "@/components/WisdomBanner";
 import { LevelBar } from "@/components/LevelBar";
 import { PillarCard } from "@/components/PillarCard";
@@ -13,7 +14,7 @@ import { DualProgressBar } from "@/components/DualProgressBar";
 
 const Index = () => {
   const { profile } = useAuth();
-  const role = (profile?.role as "guide" | "guardian") || "guide";
+  const role = useRoleTheme();
   const pillars = getPillarsForRole(role);
 
   const {
