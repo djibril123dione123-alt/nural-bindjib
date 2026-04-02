@@ -2,12 +2,11 @@ import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
-  { path: "/", icon: "⚔️", label: "Quêtes" },
-  { path: "/lab", icon: "🪞", label: "Lab" },
-  { path: "/salat", icon: "🕌", label: "Salat" },
-  { path: "/hifz", icon: "📖", label: "Hifz" },
-  { path: "/bilan", icon: "🌙", label: "Bilan" },
-  { path: "/profile", icon: "👤", label: "Profil" },
+  { path: "/", icon: "🏠", label: "Home" },
+  { path: "/tazkiyah", icon: "🕌", label: "Tazkiyah" },
+  { path: "/lab", icon: "🧪", label: "Lab" },
+  { path: "/reflexion", icon: "✍️", label: "Réflexion" },
+  { path: "/synergie", icon: "♾️", label: "Synergie" },
 ];
 
 export function BottomNav() {
@@ -19,7 +18,8 @@ export function BottomNav() {
       <div className="glass border-t border-border">
         <div className="max-w-2xl mx-auto flex">
           {NAV_ITEMS.map(item => {
-            const active = location.pathname === item.path;
+            const active = location.pathname === item.path ||
+              (item.path !== "/" && location.pathname.startsWith(item.path));
             return (
               <motion.button
                 key={item.path}
