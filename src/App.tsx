@@ -4,18 +4,14 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { AudioEngineProvider } from "@/hooks/useAudioEngine";
 import { AnimatePresence, motion } from "framer-motion";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
-import DeepWork from "./pages/DeepWork";
-import DuoChat from "./pages/DuoChat";
-import Profile from "./pages/Profile";
-import HifzTracker from "./pages/HifzTracker";
-import JournalSakinah from "./pages/JournalSakinah";
-import Tazkiyah from "./pages/Tazkiyah";
-import SalatTracker from "./pages/SalatTracker";
-import BilanSoir from "./pages/BilanSoir";
-import AlterEgoLab from "./pages/AlterEgoLab";
+import TazkiyahHub from "./pages/TazkiyahHub";
+import LabHub from "./pages/LabHub";
+import ReflexionHub from "./pages/ReflexionHub";
+import SynergieHub from "./pages/SynergieHub";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -45,15 +41,10 @@ function AnimatedRoutes() {
         <Routes location={location}>
           <Route path="/auth" element={<Auth />} />
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-          <Route path="/lab" element={<ProtectedRoute><AlterEgoLab /></ProtectedRoute>} />
-          <Route path="/deep-work" element={<ProtectedRoute><DeepWork /></ProtectedRoute>} />
-          <Route path="/chat" element={<ProtectedRoute><DuoChat /></ProtectedRoute>} />
-          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/hifz" element={<ProtectedRoute><HifzTracker /></ProtectedRoute>} />
-          <Route path="/journal" element={<ProtectedRoute><JournalSakinah /></ProtectedRoute>} />
-          <Route path="/tazkiyah" element={<ProtectedRoute><Tazkiyah /></ProtectedRoute>} />
-          <Route path="/salat" element={<ProtectedRoute><SalatTracker /></ProtectedRoute>} />
-          <Route path="/bilan" element={<ProtectedRoute><BilanSoir /></ProtectedRoute>} />
+          <Route path="/tazkiyah" element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
+          <Route path="/lab" element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
+          <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
+          <Route path="/synergie" element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </motion.div>
@@ -68,7 +59,9 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <AnimatedRoutes />
+          <AudioEngineProvider>
+            <AnimatedRoutes />
+          </AudioEngineProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
