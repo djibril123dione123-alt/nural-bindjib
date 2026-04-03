@@ -242,7 +242,9 @@ export type Database = {
           created_at: string | null
           display_name: string
           id: string
+          level: number | null
           role: string
+          total_xp: number | null
           user_id: string
         }
         Insert: {
@@ -250,7 +252,9 @@ export type Database = {
           created_at?: string | null
           display_name?: string
           id?: string
+          level?: number | null
           role?: string
+          total_xp?: number | null
           user_id: string
         }
         Update: {
@@ -258,7 +262,9 @@ export type Database = {
           created_at?: string | null
           display_name?: string
           id?: string
+          level?: number | null
           role?: string
+          total_xp?: number | null
           user_id?: string
         }
         Relationships: []
@@ -352,6 +358,30 @@ export type Database = {
           id?: string
           title?: string
           updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      xp_history: {
+        Row: {
+          amount: number
+          created_at: string | null
+          id: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string | null
+          id?: string
+          source: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string | null
+          id?: string
+          source?: string
           user_id?: string
         }
         Relationships: []

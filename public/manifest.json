@@ -1,0 +1,22 @@
+{
+  "name": "Nur al-BinDjib — Alliance Sanctuary",
+  "short_name": "Nur al-BinDjib",
+  "description": "Centre de commande holistique pour l'Alliance",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

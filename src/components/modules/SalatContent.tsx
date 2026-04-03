@@ -2,16 +2,18 @@ import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useBaraka } from "@/hooks/useBaraka";
 import { CircularProgress } from "@/components/CircularProgress";
 import { GoldenParticles, useParticles } from "@/components/GoldenParticles";
+import { TasbihCounter } from "@/components/TasbihCounter";
 import { toast } from "sonner";
 
 const PRAYERS = [
-  { name: "fajr", label: "Fajr", icon: "🌅", defaultTime: "05:30", xp: 30, sunnah: "2 avant" },
-  { name: "dhuhr", label: "Dhuhr", icon: "☀️", defaultTime: "13:00", xp: 10, sunnah: "4 avant, 2 après" },
-  { name: "asr", label: "Asr", icon: "🌤️", defaultTime: "16:30", xp: 10, sunnah: "" },
-  { name: "maghrib", label: "Maghrib", icon: "🌇", defaultTime: "19:45", xp: 10, sunnah: "2 après" },
-  { name: "isha", label: "Isha", icon: "🌙", defaultTime: "21:15", xp: 10, sunnah: "2 après + Witr" },
+  { name: "fajr", label: "Fajr", icon: "🌅", defaultTime: "05:30", sunnah: "2 avant" },
+  { name: "dhuhr", label: "Dhuhr", icon: "☀️", defaultTime: "13:00", sunnah: "4 avant, 2 après" },
+  { name: "asr", label: "Asr", icon: "🌤️", defaultTime: "16:30", sunnah: "" },
+  { name: "maghrib", label: "Maghrib", icon: "🌇", defaultTime: "19:45", sunnah: "2 après" },
+  { name: "isha", label: "Isha", icon: "🌙", defaultTime: "21:15", sunnah: "2 après + Witr" },
 ];
 
 const MOTIVATIONS = [
@@ -34,10 +36,13 @@ interface SalatEntry {
 
 export default function SalatContent() {
   const { user } = useAuth();
+  const { getXp, awardXp } = useBaraka();
   const [entries, setEntries] = useState<SalatEntry[]>([]);
   const [editingTime, setEditingTime] = useState<string | null>(null);
   const [sunnahDone, setSunnahDone] = useState<Record<string, boolean>>({});
   const [mosqueDone, setMosqueDone] = useState<Record<string, boolean>>({});
+  const [showTasbih, setShowTasbih] = useState<string | null>(null);
+  const [preQuranDone, setPreQuranDone] = useState<Record<string, boolean>>({});
   const { trigger, fire } = useParticles();
   const today = new Date().toISOString().slice(0, 10);
 
@@ -70,9 +75,21 @@ export default function SalatContent() {
     }
 
     fire();
-    let xpGained = prayer.xp;
-    if (mosqueDone[prayerName]) xpGained *= 2;
-    toast.success(onTime ? `${prayer.label} à l'heure ! +${xpGained} XP` : `${prayer.label} validée +${xpGained} XP`);
+    if (navigator.vibrate) navigator.vibrate(30);
+
+    const xp = getXp(prayerName);
+    let totalXp = xp;
+    if (mosqueDone[prayerName]) totalXp += getXp("mosque");
+    if (preQuranDone[prayerName]) totalXp += getXp("quran_pre");
+
+    await awardXp(totalXp, `Salat ${prayer.label}`);
+    toast.success(onTime ? `${prayer.label} à l'heure ! +${totalXp} XP` : `${prayer.label} validée +${totalXp} XP`);
+
+    // Show Tasbih after completing prayer
+    if (!existing?.completed) {
+      setShowTasbih(prayerName);
+    }
+
     loadEntries();
   };
 
@@ -99,11 +116,14 @@ export default function SalatContent() {
       const pTime = new Date(); pTime.setHours(h, m, 0, 0);
       if (pTime > now && !(entry?.completed)) {
         const diff = Math.floor((pTime.getTime() - now.getTime()) / 60000);
-        return { label: p.label, icon: p.icon, time: `${Math.floor(diff / 60)}h ${diff % 60}min` };
+        return { name: p.name, label: p.label, icon: p.icon, time: `${Math.floor(diff / 60)}h ${diff % 60}min`, diff };
       }
     }
     return null;
   }, [entries]);
+
+  // Check if pre-prayer Quran button should show (15 min before)
+  const showPreQuran = nextPrayer && nextPrayer.diff <= 15;
 
   return (
     <div className="relative overflow-hidden space-y-5">
@@ -112,6 +132,23 @@ export default function SalatContent() {
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass rounded-2xl p-4 text-center border border-accent/20">
         <p className="text-xs text-accent italic">{motivation}</p>
       </motion.div>
+
+      {/* Pre-prayer Quran button */}
+      {showPreQuran && nextPrayer && !preQuranDone[nextPrayer.name] && (
+        <motion.button
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => {
+            setPreQuranDone(p => ({ ...p, [nextPrayer.name]: true }));
+            if (navigator.vibrate) navigator.vibrate(30);
+            toast.success(`Lecture Coran avant ${nextPrayer.label} ! +15 XP`);
+          }}
+          className="w-full py-3 rounded-2xl bg-accent/20 border border-accent/50 text-accent font-semibold text-sm glow-gold flex items-center justify-center gap-2"
+        >
+          📖 Lecture Coran avant {nextPrayer.label} (+15 XP)
+        </motion.button>
+      )}
 
       <div className="grid grid-cols-3 gap-3">
         <div className="glass rounded-2xl p-4 text-center">
@@ -134,6 +171,11 @@ export default function SalatContent() {
           </div>
         )}
       </div>
+
+      {/* Tasbih counter modal */}
+      {showTasbih && (
+        <TasbihCounter onComplete={() => setTimeout(() => setShowTasbih(null), 2000)} />
+      )}
 
       {PRAYERS.map((prayer, i) => {
         const entry = getEntry(prayer.name);
@@ -166,18 +208,18 @@ export default function SalatContent() {
                       ⏰ {customTime}
                     </button>
                   )}
-                  <span className="text-[10px] text-primary font-semibold">+{isMosque ? prayer.xp * 2 : prayer.xp} XP</span>
+                  <span className="text-[10px] text-primary font-semibold">+{getXp(prayer.name)} XP</span>
                 </div>
                 <div className="flex gap-2 mt-2">
                   {prayer.sunnah && (
-                    <button onClick={() => setSunnahDone(s => ({ ...s, [prayer.name]: !s[prayer.name] }))}
+                    <button onClick={() => { setSunnahDone(s => ({ ...s, [prayer.name]: !s[prayer.name] })); if (navigator.vibrate) navigator.vibrate(10); }}
                       className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${isSunnah ? "bg-primary/20 border-primary text-primary" : "border-border/50 text-muted-foreground"}`}>
                       {isSunnah ? "✓" : "○"} Rawatib ({prayer.sunnah})
                     </button>
                   )}
-                  <button onClick={() => setMosqueDone(m => ({ ...m, [prayer.name]: !m[prayer.name] }))}
+                  <button onClick={() => { setMosqueDone(m => ({ ...m, [prayer.name]: !m[prayer.name] })); if (navigator.vibrate) navigator.vibrate(10); }}
                     className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${isMosque ? "bg-accent/20 border-accent text-accent" : "border-border/50 text-muted-foreground"}`}>
-                    {isMosque ? "✓" : "○"} Mosquée (x2)
+                    {isMosque ? "✓" : "○"} Mosquée
                   </button>
                 </div>
               </div>
