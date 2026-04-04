@@ -1,20 +1,15 @@
-import { useState, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useBaraka } from "@/hooks/useBaraka";
+import { useSanctuaryTime } from "@/hooks/useSanctuaryTime";
+import { useDuoPresence } from "@/hooks/useDuoPresence";
 import { CircularProgress } from "@/components/CircularProgress";
 import { GoldenParticles, useParticles } from "@/components/GoldenParticles";
 import { TasbihCounter } from "@/components/TasbihCounter";
+import { vibrate, vibrateSuccess, vibrateError } from "@/hooks/useHaptics";
 import { toast } from "sonner";
-
-const PRAYERS = [
-  { name: "fajr", label: "Fajr", icon: "🌅", defaultTime: "05:30", sunnah: "2 avant" },
-  { name: "dhuhr", label: "Dhuhr", icon: "☀️", defaultTime: "13:00", sunnah: "4 avant, 2 après" },
-  { name: "asr", label: "Asr", icon: "🌤️", defaultTime: "16:30", sunnah: "" },
-  { name: "maghrib", label: "Maghrib", icon: "🌇", defaultTime: "19:45", sunnah: "2 après" },
-  { name: "isha", label: "Isha", icon: "🌙", defaultTime: "21:15", sunnah: "2 après + Witr" },
-];
 
 const MOTIVATIONS = [
   "« La prière est la clé du Paradis. » — Hadith",
@@ -37,14 +32,17 @@ interface SalatEntry {
 export default function SalatContent() {
   const { user } = useAuth();
   const { getXp, awardXp } = useBaraka();
+  const { prayers, updateTime, nextPrayer, atmosphere } = useSanctuaryTime();
+  const { partnerOnline, partnerName, streakCount, recordStreak } = useDuoPresence();
   const [entries, setEntries] = useState<SalatEntry[]>([]);
   const [editingTime, setEditingTime] = useState<string | null>(null);
-  const [sunnahDone, setSunnahDone] = useState<Record<string, boolean>>({});
   const [mosqueDone, setMosqueDone] = useState<Record<string, boolean>>({});
   const [showTasbih, setShowTasbih] = useState<string | null>(null);
   const [preQuranDone, setPreQuranDone] = useState<Record<string, boolean>>({});
   const { trigger, fire } = useParticles();
   const today = new Date().toISOString().slice(0, 10);
+
+  const motivation = useMemo(() => MOTIVATIONS[Math.floor(Math.random() * MOTIVATIONS.length)], []);
 
   useEffect(() => { if (user) loadEntries(); }, [user]);
 
@@ -56,93 +54,169 @@ export default function SalatContent() {
 
   const getEntry = (name: string) => entries.find(e => e.prayer_name === name);
 
-  const togglePrayer = async (prayerName: string) => {
+  const togglePrayer = useCallback(async (prayerKey: string) => {
     if (!user) return;
-    const existing = getEntry(prayerName);
+    const prayer = prayers.find(p => p.key === prayerKey);
+    if (!prayer) return;
+
+    // Temporal lock check
+    if (!prayer.isUnlocked && !prayer.isPast) {
+      vibrateError();
+      toast.error(`Le temps appartient à Allah. Patience, l'heure de ${prayer.label} (${prayer.time}) n'est pas encore venue. 🔒`);
+      return;
+    }
+
+    const existing = getEntry(prayerKey);
     const now = new Date();
-    const prayer = PRAYERS.find(p => p.name === prayerName)!;
-    const customTime = existing?.custom_time || prayer.defaultTime;
-    const [h, m] = customTime.split(":").map(Number);
+    const [h, m] = prayer.time.split(":").map(Number);
     const prayerTime = new Date();
     prayerTime.setHours(h, m, 0, 0);
     const diffMin = (now.getTime() - prayerTime.getTime()) / 60000;
     const onTime = diffMin >= -10 && diffMin <= 30;
+    const isMosque = mosqueDone[prayerKey];
 
     if (existing) {
-      await supabase.from("salat_tracking").update({ completed: !existing.completed, completed_at: now.toISOString(), on_time: onTime }).eq("id", existing.id);
+      await supabase.from("salat_tracking").update({
+        completed: !existing.completed,
+        completed_at: now.toISOString(),
+        on_time: onTime,
+      }).eq("id", existing.id);
     } else {
-      await supabase.from("salat_tracking").insert({ user_id: user.id, date: today, prayer_name: prayerName, completed: true, completed_at: now.toISOString(), on_time: onTime, custom_time: customTime });
+      await supabase.from("salat_tracking").insert({
+        user_id: user.id,
+        date: today,
+        prayer_name: prayerKey,
+        completed: true,
+        completed_at: now.toISOString(),
+        on_time: onTime,
+        custom_time: prayer.time,
+      });
     }
 
     fire();
-    if (navigator.vibrate) navigator.vibrate(30);
+    vibrateSuccess();
 
-    const xp = getXp(prayerName);
-    let totalXp = xp;
-    if (mosqueDone[prayerName]) totalXp += getXp("mosque");
-    if (preQuranDone[prayerName]) totalXp += getXp("quran_pre");
+    let totalXp = getXp(prayerKey);
+    if (isMosque) {
+      totalXp += getXp("mosque") + 5; // +5 Jama'a bonus
+    }
+    if (preQuranDone[prayerKey]) totalXp += getXp("quran_pre");
 
-    await awardXp(totalXp, `Salat ${prayer.label}`);
-    toast.success(onTime ? `${prayer.label} à l'heure ! +${totalXp} XP` : `${prayer.label} validée +${totalXp} XP`);
+    const source = isMosque
+      ? `Salat ${prayer.label} + Mosquée (+${totalXp} XP)`
+      : `Salat ${prayer.label} (+${totalXp} XP)`;
 
-    // Show Tasbih after completing prayer
-    if (!existing?.completed) {
-      setShowTasbih(prayerName);
+    await awardXp(totalXp, source);
+    await recordStreak(prayerKey);
+
+    // If mosque mode, auto-validate Tasbih
+    if (isMosque) {
+      toast.success(`${prayer.label} à la Mosquée ! Tasbih auto-validé. +${totalXp} XP 🕌`);
+      await awardXp(10, "Tasbih (Mosquée)");
+    } else {
+      toast.success(onTime ? `${prayer.label} à l'heure ! +${totalXp} XP ✨` : `${prayer.label} validée +${totalXp} XP`);
+      if (!existing?.completed) setShowTasbih(prayerKey);
     }
 
     loadEntries();
-  };
+  }, [user, prayers, mosqueDone, preQuranDone, getXp, awardXp, recordStreak, fire, entries]);
 
-  const updateCustomTime = async (prayerName: string, time: string) => {
+  // Batch validation (return from mosque)
+  const batchValidate = useCallback(async () => {
     if (!user) return;
-    const existing = getEntry(prayerName);
-    if (existing) {
-      await supabase.from("salat_tracking").update({ custom_time: time }).eq("id", existing.id);
+    const missed = prayers.filter(p => p.isPast && !getEntry(p.key)?.completed);
+    if (missed.length === 0) {
+      toast.info("Aucune prière passée à valider.");
+      return;
     }
-    setEditingTime(null);
+
+    let totalBatchXp = 0;
+    for (const p of missed) {
+      await supabase.from("salat_tracking").insert({
+        user_id: user.id,
+        date: today,
+        prayer_name: p.key,
+        completed: true,
+        completed_at: new Date().toISOString(),
+        on_time: false,
+        custom_time: p.time,
+      });
+      const xp = getXp(p.key) + getXp("mosque") + 5;
+      totalBatchXp += xp;
+      await recordStreak(p.key);
+    }
+
+    await awardXp(totalBatchXp, `Batch Mosquée (${missed.length} prières)`);
+    await awardXp(10, "Tasbih (Mosquée batch)");
+    fire();
+    vibrateSuccess();
+    toast.success(`${missed.length} prières validées ! +${totalBatchXp} XP 🕌`);
     loadEntries();
-  };
+  }, [user, prayers, getXp, awardXp, recordStreak, fire]);
 
   const completedCount = entries.filter(e => e.completed).length;
   const onTimeCount = entries.filter(e => e.completed && e.on_time).length;
-  const motivation = useMemo(() => MOTIVATIONS[Math.floor(Math.random() * MOTIVATIONS.length)], []);
 
-  const nextPrayer = useMemo(() => {
-    const now = new Date();
-    for (const p of PRAYERS) {
-      const entry = getEntry(p.name);
-      const time = entry?.custom_time || p.defaultTime;
-      const [h, m] = time.split(":").map(Number);
-      const pTime = new Date(); pTime.setHours(h, m, 0, 0);
-      if (pTime > now && !(entry?.completed)) {
-        const diff = Math.floor((pTime.getTime() - now.getTime()) / 60000);
-        return { name: p.name, label: p.label, icon: p.icon, time: `${Math.floor(diff / 60)}h ${diff % 60}min`, diff };
-      }
+  // Pre-prayer Quran: show 15 min before next prayer
+  const showPreQuran = nextPrayer && nextPrayer.minutesUntil <= 15 && nextPrayer.minutesUntil > 0;
+
+  // Atmosphere gradient
+  const atmosGradient = useMemo(() => {
+    switch (atmosphere) {
+      case "warm": return "from-amber-900/20 via-orange-900/10 to-transparent";
+      case "bright": return "from-sky-900/10 via-transparent to-transparent";
+      case "sunset": return "from-indigo-900/20 via-purple-900/10 to-transparent";
+      case "deep": return "from-slate-900/30 via-transparent to-transparent";
     }
-    return null;
-  }, [entries]);
-
-  // Check if pre-prayer Quran button should show (15 min before)
-  const showPreQuran = nextPrayer && nextPrayer.diff <= 15;
+  }, [atmosphere]);
 
   return (
     <div className="relative overflow-hidden space-y-5">
       <GoldenParticles trigger={trigger} />
 
+      {/* Atmosphere overlay */}
+      <div className={`absolute inset-0 bg-gradient-to-b ${atmosGradient} pointer-events-none rounded-2xl`} />
+
+      {/* Partner presence */}
+      <div className="flex items-center justify-between">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex items-center gap-2"
+        >
+          <div className={`w-2 h-2 rounded-full ${partnerOnline ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground/30"}`} />
+          <span className="text-[10px] text-muted-foreground">
+            {partnerName} {partnerOnline ? "en ligne" : "hors-ligne"}
+          </span>
+        </motion.div>
+        {streakCount > 0 && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="flex items-center gap-1 bg-accent/10 border border-accent/30 rounded-full px-2 py-0.5"
+          >
+            <span className="text-[10px]">🔥</span>
+            <span className="text-[10px] text-accent font-bold">{streakCount} Duo-Streak</span>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Motivation */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass rounded-2xl p-4 text-center border border-accent/20">
         <p className="text-xs text-accent italic">{motivation}</p>
       </motion.div>
 
       {/* Pre-prayer Quran button */}
-      {showPreQuran && nextPrayer && !preQuranDone[nextPrayer.name] && (
+      {showPreQuran && nextPrayer && !preQuranDone[nextPrayer.key] && (
         <motion.button
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => {
-            setPreQuranDone(p => ({ ...p, [nextPrayer.name]: true }));
-            if (navigator.vibrate) navigator.vibrate(30);
-            toast.success(`Lecture Coran avant ${nextPrayer.label} ! +15 XP`);
+            setPreQuranDone(p => ({ ...p, [nextPrayer.key]: true }));
+            vibrate(30);
+            awardXp(getXp("quran_pre"), `Lecture Coran avant ${nextPrayer.label}`);
+            toast.success(`📖 Lecture Coran avant ${nextPrayer.label} ! +15 XP`);
           }}
           className="w-full py-3 rounded-2xl bg-accent/20 border border-accent/50 text-accent font-semibold text-sm glow-gold flex items-center justify-center gap-2"
         >
@@ -150,15 +224,16 @@ export default function SalatContent() {
         </motion.button>
       )}
 
+      {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="glass rounded-2xl p-4 text-center">
-          <CircularProgress value={completedCount} max={5} size={60} strokeWidth={4}>
+          <CircularProgress value={completedCount} max={6} size={60} strokeWidth={4}>
             <span className="text-sm font-bold text-primary">{completedCount}</span>
           </CircularProgress>
           <p className="text-[10px] text-muted-foreground mt-1">Faites</p>
         </div>
         <div className="glass rounded-2xl p-4 text-center">
-          <CircularProgress value={onTimeCount} max={5} size={60} strokeWidth={4} glowColor="var(--glow-gold)">
+          <CircularProgress value={onTimeCount} max={6} size={60} strokeWidth={4} glowColor="var(--glow-gold)">
             <span className="text-sm font-bold text-accent">{onTimeCount}</span>
           </CircularProgress>
           <p className="text-[10px] text-muted-foreground mt-1">À l'heure</p>
@@ -167,71 +242,140 @@ export default function SalatContent() {
           <div className="glass rounded-2xl p-4 text-center flex flex-col items-center justify-center">
             <span className="text-xl">{nextPrayer.icon}</span>
             <p className="text-[10px] text-foreground font-semibold mt-1">{nextPrayer.label}</p>
-            <p className="text-[10px] text-accent font-bold">{nextPrayer.time}</p>
+            <p className="text-xs font-mono font-bold text-accent">
+              {nextPrayer.minutesUntil > 60
+                ? `${Math.floor(nextPrayer.minutesUntil / 60)}h${String(nextPrayer.minutesUntil % 60).padStart(2, "0")}`
+                : `${nextPrayer.minutesUntil}min`}
+            </p>
           </div>
         )}
       </div>
 
-      {/* Tasbih counter modal */}
-      {showTasbih && (
-        <TasbihCounter onComplete={() => setTimeout(() => setShowTasbih(null), 2000)} />
-      )}
+      {/* Batch validate (return from mosque) */}
+      <motion.button
+        whileTap={{ scale: 0.97 }}
+        onClick={batchValidate}
+        className="w-full py-2.5 rounded-xl glass border border-accent/20 text-xs text-accent font-semibold flex items-center justify-center gap-2"
+      >
+        🕌 Tout valider (Retour Mosquée)
+      </motion.button>
 
-      {PRAYERS.map((prayer, i) => {
-        const entry = getEntry(prayer.name);
+      {/* Tasbih counter modal */}
+      <AnimatePresence>
+        {showTasbih && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <TasbihCounter onComplete={() => setTimeout(() => setShowTasbih(null), 2000)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Prayer cards */}
+      {prayers.map((prayer, i) => {
+        const entry = getEntry(prayer.key);
         const done = entry?.completed || false;
         const onTime = entry?.on_time || false;
-        const customTime = entry?.custom_time || prayer.defaultTime;
-        const isMosque = mosqueDone[prayer.name];
-        const isSunnah = sunnahDone[prayer.name];
+        const isLocked = !prayer.isUnlocked && !prayer.isPast;
+        const isMosque = mosqueDone[prayer.key];
 
         return (
-          <motion.div key={prayer.name} initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.08 * i }}
-            className={`glass rounded-2xl overflow-hidden transition-all ${done && onTime ? "glow-border-gold" : done ? "glow-border-emerald" : ""}`}>
+          <motion.div
+            key={prayer.key}
+            initial={{ opacity: 0, x: -30 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.06 * i }}
+            className={`glass rounded-2xl overflow-hidden transition-all ${
+              isLocked ? "opacity-40" : ""
+            } ${done && onTime ? "glow-border-gold" : done ? "glow-border-emerald" : ""}`}
+          >
             <div className="p-4 flex items-center gap-4">
-              <motion.div animate={done ? { scale: [1, 1.15, 1] } : {}} transition={{ duration: 0.5 }}
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl transition-all ${done ? "bg-gradient-to-br from-primary/30 to-accent/20" : "bg-secondary/30"}`}
-                style={done ? { boxShadow: "0 0 20px rgba(212, 175, 55, 0.3)" } : {}}>
-                {prayer.icon}
+              {/* Prayer icon */}
+              <motion.div
+                animate={done ? { scale: [1, 1.15, 1] } : {}}
+                transition={{ duration: 0.5 }}
+                className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center transition-all ${
+                  done ? "bg-gradient-to-br from-primary/30 to-accent/20" : "bg-secondary/30"
+                }`}
+                style={done ? { boxShadow: "0 0 20px rgba(212, 175, 55, 0.3)" } : {}}
+              >
+                {isLocked ? <span className="text-lg">🔒</span> : <span className="text-2xl">{prayer.icon}</span>}
+                <span className="text-[8px] font-mono font-bold text-accent mt-0.5" style={{ fontSize: "clamp(8px, 2.5vw, 11px)" }}>
+                  {prayer.time}
+                </span>
               </motion.div>
+
+              {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h3 className="font-display font-bold text-foreground">{prayer.label}</h3>
-                  {done && onTime && <span className="text-[9px] bg-accent/20 text-accent px-1.5 py-0.5 rounded-full font-bold">À L'HEURE</span>}
+                  <span className="text-[9px] text-muted-foreground">({prayer.wolof})</span>
+                  {done && onTime && (
+                    <span className="text-[9px] bg-accent/20 text-accent px-1.5 py-0.5 rounded-full font-bold">À L'HEURE</span>
+                  )}
                 </div>
+
                 <div className="flex items-center gap-2 mt-0.5">
-                  {editingTime === prayer.name ? (
-                    <input type="time" defaultValue={customTime} onBlur={(e) => updateCustomTime(prayer.name, e.target.value)} autoFocus
-                      className="bg-secondary/50 border border-border rounded px-2 py-0.5 text-xs text-foreground" />
+                  {editingTime === prayer.key ? (
+                    <input
+                      type="time"
+                      defaultValue={prayer.time}
+                      onBlur={(e) => {
+                        updateTime(prayer.key, e.target.value);
+                        setEditingTime(null);
+                      }}
+                      autoFocus
+                      className="bg-secondary/50 border border-border rounded px-2 py-0.5 text-xs text-foreground"
+                    />
                   ) : (
-                    <button onClick={() => setEditingTime(prayer.name)} className="text-[10px] text-muted-foreground hover:text-primary transition-colors">
-                      ⏰ {customTime}
+                    <button
+                      onClick={() => setEditingTime(prayer.key)}
+                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                    >
+                      ⏰ Modifier l'heure
                     </button>
                   )}
-                  <span className="text-[10px] text-primary font-semibold">+{getXp(prayer.name)} XP</span>
+                  <span className="text-[10px] text-primary font-semibold">+{getXp(prayer.key)} XP</span>
                 </div>
+
+                {/* Mosque toggle */}
                 <div className="flex gap-2 mt-2">
-                  {prayer.sunnah && (
-                    <button onClick={() => { setSunnahDone(s => ({ ...s, [prayer.name]: !s[prayer.name] })); if (navigator.vibrate) navigator.vibrate(10); }}
-                      className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${isSunnah ? "bg-primary/20 border-primary text-primary" : "border-border/50 text-muted-foreground"}`}>
-                      {isSunnah ? "✓" : "○"} Rawatib ({prayer.sunnah})
-                    </button>
-                  )}
-                  <button onClick={() => { setMosqueDone(m => ({ ...m, [prayer.name]: !m[prayer.name] })); if (navigator.vibrate) navigator.vibrate(10); }}
-                    className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${isMosque ? "bg-accent/20 border-accent text-accent" : "border-border/50 text-muted-foreground"}`}>
-                    {isMosque ? "✓" : "○"} Mosquée
+                  <button
+                    onClick={() => {
+                      setMosqueDone(m => ({ ...m, [prayer.key]: !m[prayer.key] }));
+                      vibrate(10);
+                    }}
+                    className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${
+                      isMosque ? "bg-accent/20 border-accent text-accent" : "border-border/50 text-muted-foreground"
+                    }`}
+                  >
+                    {isMosque ? "✓" : "○"} Mosquée (+{getXp("mosque") + 5})
                   </button>
                 </div>
               </div>
-              <motion.button whileTap={{ scale: 0.85 }} onClick={() => togglePrayer(prayer.name)}
-                className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold transition-all ${done ? "bg-primary text-primary-foreground" : "bg-secondary/50 border-2 border-border text-muted-foreground"}`}
-                style={done ? { boxShadow: "0 0 16px rgba(16, 185, 129, 0.5)" } : {}}>
-                {done ? "✓" : "○"}
+
+              {/* Validate button */}
+              <motion.button
+                whileTap={{ scale: isLocked ? 1 : 0.85 }}
+                onClick={() => togglePrayer(prayer.key)}
+                disabled={isLocked}
+                className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold transition-all ${
+                  done
+                    ? "bg-primary text-primary-foreground"
+                    : isLocked
+                    ? "bg-secondary/20 border-2 border-border/30 text-muted-foreground/30 cursor-not-allowed"
+                    : "bg-secondary/50 border-2 border-border text-muted-foreground"
+                }`}
+                style={done ? { boxShadow: "0 0 16px rgba(16, 185, 129, 0.5)" } : {}}
+              >
+                {done ? "✓" : isLocked ? "🔒" : "○"}
               </motion.button>
             </div>
+
             {done && entry?.completed_at && (
               <div className="px-4 pb-3">
-                <p className="text-[10px] text-muted-foreground">Validée à {new Date(entry.completed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Validée à {new Date(entry.completed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}
+                  {isMosque && " 🕌"}
+                </p>
               </div>
             )}
           </motion.div>
