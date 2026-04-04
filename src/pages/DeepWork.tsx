@@ -254,7 +254,7 @@ const DeepWork = () => {
               <span className="text-lg">📖</span>
               <div>
                 <p className="text-sm font-semibold text-foreground">Récitation du Coran</p>
-                <p className="text-[10px] text-muted-foreground">{RECITER.name}</p>
+                <p className="text-[10px] text-muted-foreground">{selectedReciter.name}</p>
               </div>
             </div>
             <motion.button
