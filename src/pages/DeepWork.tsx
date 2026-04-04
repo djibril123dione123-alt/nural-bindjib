@@ -11,10 +11,12 @@ const PRESETS = [
   { label: "90 min", seconds: 90 * 60 },
 ];
 
-const RECITER = {
-  id: "ar.alafasy",
-  name: "Mishary Rashid Alafasy",
-};
+const RECITERS = [
+  { id: "ar.alafasy", name: "Mishary Rashid Alafasy", urlFn: (n: number) => `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${n}.mp3` },
+  { id: "ar.husary", name: "Mahmoud Khalil Al-Hussary", urlFn: (n: number) => `https://www.everyayah.com/data/Husary_64kbps/${String(n).padStart(3, '0')}001.mp3` },
+];
+
+const RECITER_DEFAULT = RECITERS[0];
 
 const DeepWork = () => {
   const [duration, setDuration] = useState(PRESETS[1].seconds);
