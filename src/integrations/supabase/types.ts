@@ -158,6 +158,30 @@ export type Database = {
         }
         Relationships: []
       }
+      duo_streaks: {
+        Row: {
+          date: string
+          id: string
+          prayer_name: string
+          user_id: string
+          validated_at: string
+        }
+        Insert: {
+          date?: string
+          id?: string
+          prayer_name: string
+          user_id: string
+          validated_at?: string
+        }
+        Update: {
+          date?: string
+          id?: string
+          prayer_name?: string
+          user_id?: string
+          validated_at?: string
+        }
+        Relationships: []
+      }
       hifz_progress: {
         Row: {
           created_at: string | null
@@ -302,6 +326,30 @@ export type Database = {
           on_time?: boolean | null
           prayer_name?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      sanctuary_settings: {
+        Row: {
+          custom_time: string
+          id: string
+          prayer_name: string
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          custom_time: string
+          id?: string
+          prayer_name: string
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          custom_time?: string
+          id?: string
+          prayer_name?: string
+          updated_at?: string
+          updated_by?: string
         }
         Relationships: []
       }
