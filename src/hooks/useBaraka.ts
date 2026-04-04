@@ -6,16 +6,18 @@ import { toast } from "sonner";
 
 // Role-based XP multipliers
 const XP_TABLE: Record<string, { guide: number; guardian: number }> = {
-  fajr:     { guide: 10, guardian: 12 },
-  dhuhr:    { guide: 5,  guardian: 6 },
-  asr:      { guide: 5,  guardian: 6 },
-  maghrib:  { guide: 5,  guardian: 6 },
-  isha:     { guide: 5,  guardian: 6 },
-  mosque:   { guide: 6,  guardian: 0 },
-  hifz:     { guide: 2,  guardian: 2 },
-  quran_pre:{ guide: 15, guardian: 15 },
-  tasbih:   { guide: 10, guardian: 10 },
-  hijab:    { guide: 0,  guardian: 30 },
+  fajr:      { guide: 10, guardian: 12 },
+  suba:      { guide: 5,  guardian: 6 },
+  dhuhr:     { guide: 5,  guardian: 6 },
+  asr:       { guide: 5,  guardian: 6 },
+  maghrib:   { guide: 5,  guardian: 6 },
+  isha:      { guide: 5,  guardian: 6 },
+  mosque:    { guide: 6,  guardian: 0 },
+  hifz:      { guide: 2,  guardian: 2 },
+  quran_pre: { guide: 15, guardian: 15 },
+  tasbih:    { guide: 10, guardian: 10 },
+  hijab:     { guide: 0,  guardian: 30 },
+  no_music:  { guide: 30, guardian: 30 },
 };
 
 export function useBaraka() {

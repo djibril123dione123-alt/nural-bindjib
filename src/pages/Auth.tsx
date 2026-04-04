@@ -52,7 +52,7 @@ const Auth = () => {
       if (error) toast.error(error.message);
     } else {
       if (signupLocked) {
-        toast.error("L'Alliance est complète. Seuls Djibril et Binta peuvent se connecter.");
+        toast.error("🔒 L'Alliance est complète. Seuls Djibril et Binta peuvent se connecter.");
         setSubmitting(false);
         return;
       }
@@ -78,15 +78,31 @@ const Auth = () => {
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-md space-y-8"
       >
+        {/* Logo */}
         <div className="text-center space-y-2">
-          <h1 className="text-4xl font-display font-bold text-gradient-emerald">
-            Nur al-BinDjib
-          </h1>
+          <motion.div
+            animate={{ scale: [1, 1.03, 1] }}
+            transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+          >
+            <h1 className="text-4xl font-display font-bold text-gradient-emerald">
+              Nur al-BinDjib
+            </h1>
+          </motion.div>
           <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-            Sultan Engine V3 — L'Alliance
+            Alliance Sanctuary — Le Cercle Fermé
           </p>
+          {signupLocked && (
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-[10px] text-accent flex items-center justify-center gap-1"
+            >
+              🔒 Cercle verrouillé — 2 membres actifs
+            </motion.p>
+          )}
         </div>
 
+        {/* Form card */}
         <div className="glass rounded-2xl p-8 space-y-6 glow-border-emerald">
           <AnimatePresence mode="wait">
             <motion.div
@@ -113,16 +129,20 @@ const Auth = () => {
                       <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">Rôle dans l'Alliance</label>
                       <div className="grid grid-cols-2 gap-3">
                         <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setRole("guide")}
-                          className={`rounded-lg p-3 text-center transition-all ${role === "guide" ? "bg-primary/20 border-2 border-primary glow-emerald" : "bg-secondary/50 border border-border"}`}>
+                          className={`rounded-lg p-3 text-center transition-all ${role === "guide"
+                            ? "bg-blue-500/20 border-2 border-blue-500"
+                            : "bg-secondary/50 border border-border"}`}>
                           <span className="text-2xl block mb-1">🧭</span>
                           <span className="text-xs font-semibold text-foreground">Le Guide</span>
-                          <span className="text-[10px] block text-muted-foreground">Djibril</span>
+                          <span className="text-[10px] block text-blue-400">Djibril</span>
                         </motion.button>
                         <motion.button type="button" whileTap={{ scale: 0.97 }} onClick={() => setRole("guardian")}
-                          className={`rounded-lg p-3 text-center transition-all ${role === "guardian" ? "bg-accent/20 border-2 border-accent glow-gold" : "bg-secondary/50 border border-border"}`}>
+                          className={`rounded-lg p-3 text-center transition-all ${role === "guardian"
+                            ? "bg-pink-500/20 border-2 border-pink-500"
+                            : "bg-secondary/50 border border-border"}`}>
                           <span className="text-2xl block mb-1">🛡️</span>
                           <span className="text-xs font-semibold text-foreground">La Gardienne</span>
-                          <span className="text-[10px] block text-muted-foreground">Binta</span>
+                          <span className="text-[10px] block text-pink-400">Binta</span>
                         </motion.button>
                       </div>
                     </div>
@@ -145,7 +165,7 @@ const Auth = () => {
 
                 <motion.button type="submit" disabled={submitting} whileTap={{ scale: 0.97 }}
                   className="w-full bg-gradient-to-r from-primary to-accent text-primary-foreground font-semibold rounded-lg py-3 text-sm transition-opacity disabled:opacity-50">
-                  {submitting ? "..." : isLogin ? "Entrer dans l'Alliance" : "Créer mon compte"}
+                  {submitting ? "..." : isLogin ? "Entrer dans le Sanctuaire" : "Créer mon compte"}
                 </motion.button>
               </form>
             </motion.div>
@@ -160,12 +180,11 @@ const Auth = () => {
             </div>
           )}
 
-          {signupLocked && !isLogin && (
+          {signupLocked && (
             <div className="text-center">
-              <p className="text-xs text-destructive">🔒 L'Alliance est verrouillée — 2 membres maximum.</p>
-              <button onClick={() => setIsLogin(true)} className="text-xs text-primary mt-2 hover:underline">
-                Se connecter
-              </button>
+              <p className="text-[10px] text-muted-foreground/70">
+                L'Alliance est verrouillée. Seuls les deux Alter Egos peuvent accéder au Sanctuaire.
+              </p>
             </div>
           )}
         </div>

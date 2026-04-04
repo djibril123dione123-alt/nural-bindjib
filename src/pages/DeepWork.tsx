@@ -11,10 +11,12 @@ const PRESETS = [
   { label: "90 min", seconds: 90 * 60 },
 ];
 
-const RECITER = {
-  id: "ar.alafasy",
-  name: "Mishary Rashid Alafasy",
-};
+const RECITERS = [
+  { id: "ar.alafasy", name: "Mishary Rashid Alafasy", urlFn: (n: number) => `https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${n}.mp3` },
+  { id: "ar.husary", name: "Mahmoud Khalil Al-Hussary", urlFn: (n: number) => `https://www.everyayah.com/data/Husary_64kbps/${String(n).padStart(3, '0')}001.mp3` },
+];
+
+const RECITER_DEFAULT = RECITERS[0];
 
 const DeepWork = () => {
   const [duration, setDuration] = useState(PRESETS[1].seconds);
@@ -77,10 +79,12 @@ const DeepWork = () => {
     };
   }, [running, paused]);
 
-  const playQuranAudio = useCallback(async () => {
+  const [selectedReciter, setSelectedReciter] = useState(RECITER_DEFAULT);
+
+  const playQuranAudio = useCallback(async (reciter = selectedReciter) => {
     try {
       setAudioLoading(true);
-      const audioUrl = `https://cdn.islamic.network/quran/audio-surah/128/${RECITER.id}/${selectedSurah.number}.mp3`;
+      const audioUrl = reciter.urlFn(selectedSurah.number);
 
       if (audioRef.current) {
         audioRef.current.pause();
@@ -95,19 +99,37 @@ const DeepWork = () => {
         setAudioLoading(false);
         audio.play();
         setIsPlaying(true);
-      });
+
+        // Media Session API for lock screen
+        if ("mediaSession" in navigator) {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: `Sourate ${selectedSurah.name}`,
+            artist: reciter.name,
+            album: "Alliance Sanctuary — Quran",
+          });
+          navigator.mediaSession.setActionHandler("pause", () => { audio.pause(); setIsPlaying(false); });
+          navigator.mediaSession.setActionHandler("play", () => { audio.play(); setIsPlaying(true); });
+        }
+      }, { once: true });
 
       audio.addEventListener("error", () => {
         setAudioLoading(false);
-        toast.error("Impossible de charger l'audio. Vérifiez votre connexion.");
-      });
+        // Fallback to other reciter
+        const fallback = RECITERS.find(r => r.id !== reciter.id);
+        if (fallback) {
+          toast.info(`Basculement vers ${fallback.name}...`);
+          playQuranAudio(fallback);
+        } else {
+          toast.error("Impossible de charger l'audio.");
+        }
+      }, { once: true });
 
       audio.load();
     } catch {
       setAudioLoading(false);
       toast.error("Erreur de chargement audio");
     }
-  }, [selectedSurah]);
+  }, [selectedSurah, selectedReciter]);
 
   const stopAudio = useCallback(() => {
     if (audioRef.current) {
@@ -232,7 +254,7 @@ const DeepWork = () => {
               <span className="text-lg">📖</span>
               <div>
                 <p className="text-sm font-semibold text-foreground">Récitation du Coran</p>
-                <p className="text-[10px] text-muted-foreground">{RECITER.name}</p>
+                <p className="text-[10px] text-muted-foreground">{selectedReciter.name}</p>
               </div>
             </div>
             <motion.button
