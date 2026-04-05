@@ -1,11 +1,20 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
+import { useDuoPresence, type DuoStatus } from "@/hooks/useDuoPresence";
 import { TodoList } from "@/components/TodoList";
 import { toast } from "sonner";
 
+const STATUS_OPTIONS: { value: DuoStatus; label: string; emoji: string }[] = [
+  { value: "libre", label: "Libre", emoji: "🟢" },
+  { value: "occupe", label: "Occupé", emoji: "🔴" },
+  { value: "endormi", label: "Endormi", emoji: "🌙" },
+  { value: "etudie", label: "Étudie", emoji: "📚" },
+];
+
 export default function ProfileContent() {
   const { user, profile, signOut } = useAuth();
+  const { myStatus, setMyStatus } = useDuoPresence();
   const [copied, setCopied] = useState(false);
 
   const roleLabel = profile?.role === "guide" ? "🧭 Le Guide" : "🛡️ La Gardienne";
@@ -31,6 +40,27 @@ export default function ProfileContent() {
           <p className="text-xs text-muted-foreground">{roleDesc}</p>
         </div>
         <div className="text-xs text-muted-foreground">{user?.email}</div>
+
+        {/* Status selector */}
+        <div className="space-y-2">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Mon Statut</p>
+          <div className="flex items-center justify-center gap-2">
+            {STATUS_OPTIONS.map(opt => (
+              <motion.button
+                key={opt.value}
+                whileTap={{ scale: 0.9 }}
+                onClick={() => setMyStatus(opt.value)}
+                className={`text-[10px] px-3 py-1.5 rounded-full border transition-all ${
+                  myStatus === opt.value
+                    ? "bg-primary/20 border-primary text-primary"
+                    : "border-border/50 text-muted-foreground hover:border-primary/30"
+                }`}
+              >
+                {opt.emoji} {opt.label}
+              </motion.button>
+            ))}
+          </div>
+        </div>
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
