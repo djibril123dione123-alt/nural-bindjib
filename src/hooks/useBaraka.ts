@@ -55,16 +55,14 @@ export function useBaraka() {
       .update({ total_xp: newTotal, level: newLevel })
       .eq("user_id", user.id);
 
-    // Log activity
+    // Log activity (clean source, no double XP display)
     await supabase.from("activity_feed").insert({
       user_id: user.id,
-      action: `${source} (+${amount} XP)`,
+      action: source,
       xp_earned: amount,
     });
 
-    // Haptic feedback
     if (navigator.vibrate) navigator.vibrate(50);
-
     return newTotal;
   }, [user]);
 
@@ -92,7 +90,6 @@ export function useBaraka() {
       .eq("user_id", user.id);
 
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-    toast.error(`-${amount} XP : ${reason}`);
 
     return newTotal;
   }, [user]);

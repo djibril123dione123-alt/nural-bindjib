@@ -14,7 +14,7 @@ interface FeedItem {
 export function ActivityFeed() {
   const { user } = useAuth();
   const [items, setItems] = useState<FeedItem[]>([]);
-  const [profiles, setProfiles] = useState<Record<string, string>>({});
+  const [profiles, setProfiles] = useState<Record<string, { name: string; role: string }>>({});
 
   useEffect(() => {
     loadFeed();
@@ -22,8 +22,8 @@ export function ActivityFeed() {
 
     const channel = supabase
       .channel("activity-feed-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_feed" }, (payload) => {
-        setItems(prev => [payload.new as FeedItem, ...prev].slice(0, 20));
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_feed" }, () => {
+        loadFeed();
       })
       .subscribe();
 
@@ -35,15 +35,25 @@ export function ActivityFeed() {
       .from("activity_feed")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(20);
-    if (data) setItems(data as FeedItem[]);
+      .limit(30);
+    if (data) {
+      // Deduplicate: keep only latest per user+action combo
+      const seen = new Set<string>();
+      const deduped = (data as FeedItem[]).filter(item => {
+        const key = `${item.user_id}-${item.action}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      setItems(deduped.slice(0, 8));
+    }
   };
 
   const loadProfiles = async () => {
-    const { data } = await supabase.from("profiles").select("user_id, display_name");
+    const { data } = await supabase.from("profiles").select("user_id, display_name, role");
     if (data) {
-      const map: Record<string, string> = {};
-      data.forEach(p => { map[p.user_id] = p.display_name; });
+      const map: Record<string, { name: string; role: string }> = {};
+      data.forEach(p => { map[p.user_id] = { name: p.display_name, role: p.role }; });
       setProfiles(map);
     }
   };
@@ -66,18 +76,20 @@ export function ActivityFeed() {
         🪞 Miroir de l'Alliance
       </h3>
       <AnimatePresence mode="popLayout">
-        {items.slice(0, 5).map(item => {
+        {items.map(item => {
           const isMe = item.user_id === user?.id;
-          const name = profiles[item.user_id] || "...";
+          const profile = profiles[item.user_id];
+          const name = profile?.name || "...";
+          const emoji = profile?.role === "guardian" ? "🛡️" : "🧭";
           return (
             <motion.div key={item.id} layout initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
               className={`flex items-center gap-3 text-xs ${isMe ? "text-primary" : "text-accent"}`}
             >
-              <span className="text-base">{isMe ? "🧭" : "🛡️"}</span>
-              <span className="flex-1 text-foreground/80">
+              <span className="text-base">{emoji}</span>
+              <span className="flex-1 text-foreground/80 truncate">
                 <strong>{name}</strong> {item.action}
-                {item.xp_earned > 0 && <span className="text-accent ml-1">(+{item.xp_earned} XP)</span>}
               </span>
+              {item.xp_earned > 0 && <span className="text-accent text-[10px]">+{item.xp_earned}</span>}
               <span className="text-muted-foreground text-[10px]">{timeAgo(item.created_at)}</span>
             </motion.div>
           );
