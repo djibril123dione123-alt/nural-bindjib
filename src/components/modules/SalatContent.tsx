@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -31,7 +31,7 @@ interface SalatEntry {
 
 export default function SalatContent() {
   const { user } = useAuth();
-  const { getXp, awardXp } = useBaraka();
+  const { getXp, awardXp, applyPenalty } = useBaraka();
   const { prayers, updateTime, nextPrayer, atmosphere } = useSanctuaryTime();
   const { partnerOnline, partnerName, streakCount, recordStreak } = useDuoPresence();
   const [entries, setEntries] = useState<SalatEntry[]>([]);
@@ -39,8 +39,10 @@ export default function SalatContent() {
   const [mosqueDone, setMosqueDone] = useState<Record<string, boolean>>({});
   const [showTasbih, setShowTasbih] = useState<string | null>(null);
   const [preQuranDone, setPreQuranDone] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState<Record<string, boolean>>({});
   const { trigger, fire } = useParticles();
   const today = new Date().toISOString().slice(0, 10);
+  const entriesRef = useRef<SalatEntry[]>([]);
 
   const motivation = useMemo(() => MOTIVATIONS[Math.floor(Math.random() * MOTIVATIONS.length)], []);
 
@@ -48,78 +50,109 @@ export default function SalatContent() {
 
   const loadEntries = async () => {
     if (!user) return;
-    const { data } = await supabase.from("salat_tracking").select("*").eq("user_id", user.id).eq("date", today);
-    if (data) setEntries(data as SalatEntry[]);
+    const { data, error } = await supabase
+      .from("salat_tracking")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("date", today);
+    if (error) { console.error("loadEntries error:", error); return; }
+    if (data) {
+      const typed = data as SalatEntry[];
+      setEntries(typed);
+      entriesRef.current = typed;
+    }
   };
 
-  const getEntry = (name: string) => entries.find(e => e.prayer_name === name);
+  const getEntry = useCallback((name: string) => {
+    return entriesRef.current.find(e => e.prayer_name === name);
+  }, []);
 
   const togglePrayer = useCallback(async (prayerKey: string) => {
     if (!user) return;
     const prayer = prayers.find(p => p.key === prayerKey);
     if (!prayer) return;
 
-    // Temporal lock check
-    if (!prayer.isUnlocked && !prayer.isPast) {
-      vibrateError();
-      toast.error(`Le temps appartient à Allah. Patience, l'heure de ${prayer.label} (${prayer.time}) n'est pas encore venue. 🔒`);
-      return;
+    // Prevent double-click
+    if (loading[prayerKey]) return;
+    setLoading(prev => ({ ...prev, [prayerKey]: true }));
+
+    try {
+      // Temporal lock check
+      if (!prayer.isUnlocked && !prayer.isPast) {
+        vibrateError();
+        toast.error(`Le temps appartient à Allah. Patience, l'heure de ${prayer.label} (${prayer.time}) n'est pas encore venue. 🔒`);
+        return;
+      }
+
+      const existing = getEntry(prayerKey);
+      const now = new Date();
+      const [h, m] = prayer.time.split(":").map(Number);
+      const prayerTime = new Date();
+      prayerTime.setHours(h, m, 0, 0);
+      const diffMin = (now.getTime() - prayerTime.getTime()) / 60000;
+      const onTime = diffMin >= -10 && diffMin <= 30;
+      const isMosque = mosqueDone[prayerKey];
+
+      if (existing?.completed) {
+        // UNCHECK: Remove entry, reverse XP
+        await supabase.from("salat_tracking").delete().eq("id", existing.id);
+
+        // Calculate XP to remove
+        let xpToRemove = getXp(prayerKey);
+        if (isMosque) xpToRemove += getXp("mosque") + 5;
+        if (preQuranDone[prayerKey]) xpToRemove += getXp("quran_pre");
+
+        await applyPenalty(xpToRemove, `Annulation ${prayer.label}`);
+
+        // Remove related activity entries
+        await supabase.from("activity_feed")
+          .delete()
+          .eq("user_id", user.id)
+          .ilike("action", `%${prayer.label}%`);
+
+        toast.info(`${prayer.label} décochée. -${xpToRemove} XP`);
+      } else {
+        // CHECK: Upsert entry (unique constraint handles dedup)
+        const { error } = await supabase.from("salat_tracking").upsert({
+          user_id: user.id,
+          date: today,
+          prayer_name: prayerKey,
+          completed: true,
+          completed_at: now.toISOString(),
+          on_time: onTime,
+          custom_time: prayer.time,
+        }, { onConflict: "user_id,prayer_name,date" });
+
+        if (error) { console.error("Upsert salat error:", error); toast.error("Erreur de sauvegarde"); return; }
+
+        fire();
+        vibrateSuccess();
+
+        let totalXp = getXp(prayerKey);
+        if (isMosque) totalXp += getXp("mosque") + 5;
+        if (preQuranDone[prayerKey]) totalXp += getXp("quran_pre");
+
+        const source = isMosque
+          ? `Salat ${prayer.label} + Mosquée`
+          : `Salat ${prayer.label}`;
+
+        await awardXp(totalXp, source);
+        await recordStreak(prayerKey);
+
+        if (isMosque) {
+          toast.success(`${prayer.label} à la Mosquée ! Tasbih auto-validé. +${totalXp} XP 🕌`);
+          await awardXp(10, "Tasbih (Mosquée)");
+        } else {
+          toast.success(onTime ? `${prayer.label} à l'heure ! +${totalXp} XP ✨` : `${prayer.label} validée +${totalXp} XP`);
+          if (!existing?.completed) setShowTasbih(prayerKey);
+        }
+      }
+
+      await loadEntries();
+    } finally {
+      setLoading(prev => ({ ...prev, [prayerKey]: false }));
     }
-
-    const existing = getEntry(prayerKey);
-    const now = new Date();
-    const [h, m] = prayer.time.split(":").map(Number);
-    const prayerTime = new Date();
-    prayerTime.setHours(h, m, 0, 0);
-    const diffMin = (now.getTime() - prayerTime.getTime()) / 60000;
-    const onTime = diffMin >= -10 && diffMin <= 30;
-    const isMosque = mosqueDone[prayerKey];
-
-    if (existing) {
-      await supabase.from("salat_tracking").update({
-        completed: !existing.completed,
-        completed_at: now.toISOString(),
-        on_time: onTime,
-      }).eq("id", existing.id);
-    } else {
-      await supabase.from("salat_tracking").insert({
-        user_id: user.id,
-        date: today,
-        prayer_name: prayerKey,
-        completed: true,
-        completed_at: now.toISOString(),
-        on_time: onTime,
-        custom_time: prayer.time,
-      });
-    }
-
-    fire();
-    vibrateSuccess();
-
-    let totalXp = getXp(prayerKey);
-    if (isMosque) {
-      totalXp += getXp("mosque") + 5; // +5 Jama'a bonus
-    }
-    if (preQuranDone[prayerKey]) totalXp += getXp("quran_pre");
-
-    const source = isMosque
-      ? `Salat ${prayer.label} + Mosquée (+${totalXp} XP)`
-      : `Salat ${prayer.label} (+${totalXp} XP)`;
-
-    await awardXp(totalXp, source);
-    await recordStreak(prayerKey);
-
-    // If mosque mode, auto-validate Tasbih
-    if (isMosque) {
-      toast.success(`${prayer.label} à la Mosquée ! Tasbih auto-validé. +${totalXp} XP 🕌`);
-      await awardXp(10, "Tasbih (Mosquée)");
-    } else {
-      toast.success(onTime ? `${prayer.label} à l'heure ! +${totalXp} XP ✨` : `${prayer.label} validée +${totalXp} XP`);
-      if (!existing?.completed) setShowTasbih(prayerKey);
-    }
-
-    loadEntries();
-  }, [user, prayers, mosqueDone, preQuranDone, getXp, awardXp, recordStreak, fire, entries]);
+  }, [user, prayers, mosqueDone, preQuranDone, getXp, awardXp, applyPenalty, recordStreak, fire, loading]);
 
   // Batch validation (return from mosque)
   const batchValidate = useCallback(async () => {
@@ -132,7 +165,7 @@ export default function SalatContent() {
 
     let totalBatchXp = 0;
     for (const p of missed) {
-      await supabase.from("salat_tracking").insert({
+      await supabase.from("salat_tracking").upsert({
         user_id: user.id,
         date: today,
         prayer_name: p.key,
@@ -140,7 +173,7 @@ export default function SalatContent() {
         completed_at: new Date().toISOString(),
         on_time: false,
         custom_time: p.time,
-      });
+      }, { onConflict: "user_id,prayer_name,date" });
       const xp = getXp(p.key) + getXp("mosque") + 5;
       totalBatchXp += xp;
       await recordStreak(p.key);
@@ -151,7 +184,7 @@ export default function SalatContent() {
     fire();
     vibrateSuccess();
     toast.success(`${missed.length} prières validées ! +${totalBatchXp} XP 🕌`);
-    loadEntries();
+    await loadEntries();
   }, [user, prayers, getXp, awardXp, recordStreak, fire]);
 
   const completedCount = entries.filter(e => e.completed).length;
@@ -179,27 +212,39 @@ export default function SalatContent() {
 
       {/* Partner presence */}
       <div className="flex items-center justify-between">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="flex items-center gap-2"
-        >
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${partnerOnline ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground/30"}`} />
           <span className="text-[10px] text-muted-foreground">
             {partnerName} {partnerOnline ? "en ligne" : "hors-ligne"}
           </span>
         </motion.div>
         {streakCount > 0 && (
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            className="flex items-center gap-1 bg-accent/10 border border-accent/30 rounded-full px-2 py-0.5"
-          >
+          <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
+            className="flex items-center gap-1 bg-accent/10 border border-accent/30 rounded-full px-2 py-0.5">
             <span className="text-[10px]">🔥</span>
             <span className="text-[10px] text-accent font-bold">{streakCount} Duo-Streak</span>
           </motion.div>
         )}
       </div>
+
+      {/* Next prayer focal point */}
+      {nextPrayer && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="glass rounded-2xl p-5 text-center glow-border-gold"
+        >
+          <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Prochaine prière</p>
+          <span className="text-3xl block mb-1">{nextPrayer.icon}</span>
+          <p className="text-lg font-display font-bold text-foreground">{nextPrayer.label}</p>
+          <p className="text-4xl font-mono font-black text-accent tracking-tight" style={{ fontVariantNumeric: "tabular-nums" }}>
+            {nextPrayer.minutesUntil > 60
+              ? `${Math.floor(nextPrayer.minutesUntil / 60)}h${String(nextPrayer.minutesUntil % 60).padStart(2, "0")}`
+              : `${nextPrayer.minutesUntil} min`}
+          </p>
+          <p className="text-[10px] text-muted-foreground mt-1">à {nextPrayer.time}</p>
+        </motion.div>
+      )}
 
       {/* Motivation */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass rounded-2xl p-4 text-center border border-accent/20">
@@ -225,7 +270,7 @@ export default function SalatContent() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <div className="glass rounded-2xl p-4 text-center">
           <CircularProgress value={completedCount} max={6} size={60} strokeWidth={4}>
             <span className="text-sm font-bold text-primary">{completedCount}</span>
@@ -238,25 +283,11 @@ export default function SalatContent() {
           </CircularProgress>
           <p className="text-[10px] text-muted-foreground mt-1">À l'heure</p>
         </div>
-        {nextPrayer && (
-          <div className="glass rounded-2xl p-4 text-center flex flex-col items-center justify-center">
-            <span className="text-xl">{nextPrayer.icon}</span>
-            <p className="text-[10px] text-foreground font-semibold mt-1">{nextPrayer.label}</p>
-            <p className="text-xs font-mono font-bold text-accent">
-              {nextPrayer.minutesUntil > 60
-                ? `${Math.floor(nextPrayer.minutesUntil / 60)}h${String(nextPrayer.minutesUntil % 60).padStart(2, "0")}`
-                : `${nextPrayer.minutesUntil}min`}
-            </p>
-          </div>
-        )}
       </div>
 
-      {/* Batch validate (return from mosque) */}
-      <motion.button
-        whileTap={{ scale: 0.97 }}
-        onClick={batchValidate}
-        className="w-full py-2.5 rounded-xl glass border border-accent/20 text-xs text-accent font-semibold flex items-center justify-center gap-2"
-      >
+      {/* Batch validate */}
+      <motion.button whileTap={{ scale: 0.97 }} onClick={batchValidate}
+        className="w-full py-2.5 rounded-xl glass border border-accent/20 text-xs text-accent font-semibold flex items-center justify-center gap-2">
         🕌 Tout valider (Retour Mosquée)
       </motion.button>
 
@@ -271,11 +302,12 @@ export default function SalatContent() {
 
       {/* Prayer cards */}
       {prayers.map((prayer, i) => {
-        const entry = getEntry(prayer.key);
+        const entry = entries.find(e => e.prayer_name === prayer.key);
         const done = entry?.completed || false;
         const onTime = entry?.on_time || false;
         const isLocked = !prayer.isUnlocked && !prayer.isPast;
         const isMosque = mosqueDone[prayer.key];
+        const isLoading = loading[prayer.key];
 
         return (
           <motion.div
@@ -283,6 +315,7 @@ export default function SalatContent() {
             initial={{ opacity: 0, x: -30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.06 * i }}
+            whileHover={{ scale: 1.01 }}
             className={`glass rounded-2xl overflow-hidden transition-all ${
               isLocked ? "opacity-40" : ""
             } ${done && onTime ? "glow-border-gold" : done ? "glow-border-emerald" : ""}`}
@@ -318,18 +351,13 @@ export default function SalatContent() {
                     <input
                       type="time"
                       defaultValue={prayer.time}
-                      onBlur={(e) => {
-                        updateTime(prayer.key, e.target.value);
-                        setEditingTime(null);
-                      }}
+                      onBlur={(e) => { updateTime(prayer.key, e.target.value); setEditingTime(null); }}
                       autoFocus
                       className="bg-secondary/50 border border-border rounded px-2 py-0.5 text-xs text-foreground"
                     />
                   ) : (
-                    <button
-                      onClick={() => setEditingTime(prayer.key)}
-                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
-                    >
+                    <button onClick={() => setEditingTime(prayer.key)}
+                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors">
                       ⏰ Modifier l'heure
                     </button>
                   )}
@@ -339,10 +367,7 @@ export default function SalatContent() {
                 {/* Mosque toggle */}
                 <div className="flex gap-2 mt-2">
                   <button
-                    onClick={() => {
-                      setMosqueDone(m => ({ ...m, [prayer.key]: !m[prayer.key] }));
-                      vibrate(10);
-                    }}
+                    onClick={() => { setMosqueDone(m => ({ ...m, [prayer.key]: !m[prayer.key] })); vibrate(10); }}
                     className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${
                       isMosque ? "bg-accent/20 border-accent text-accent" : "border-border/50 text-muted-foreground"
                     }`}
@@ -356,9 +381,11 @@ export default function SalatContent() {
               <motion.button
                 whileTap={{ scale: isLocked ? 1 : 0.85 }}
                 onClick={() => togglePrayer(prayer.key)}
-                disabled={isLocked}
+                disabled={isLocked || isLoading}
                 className={`w-12 h-12 rounded-2xl flex items-center justify-center text-lg font-bold transition-all ${
-                  done
+                  isLoading
+                    ? "bg-secondary/30 border-2 border-border/30 animate-pulse"
+                    : done
                     ? "bg-primary text-primary-foreground"
                     : isLocked
                     ? "bg-secondary/20 border-2 border-border/30 text-muted-foreground/30 cursor-not-allowed"
@@ -366,7 +393,7 @@ export default function SalatContent() {
                 }`}
                 style={done ? { boxShadow: "0 0 16px rgba(16, 185, 129, 0.5)" } : {}}
               >
-                {done ? "✓" : isLocked ? "🔒" : "○"}
+                {isLoading ? "⏳" : done ? "✓" : isLocked ? "🔒" : "○"}
               </motion.button>
             </div>
 

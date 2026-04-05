@@ -2,21 +2,27 @@ import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 
+export type DuoStatus = "libre" | "occupe" | "endormi" | "etudie";
+
 interface PresenceState {
   partnerOnline: boolean;
   partnerName: string;
+  partnerStatus: DuoStatus;
   streakCount: number;
+  myStatus: DuoStatus;
 }
 
 export function useDuoPresence() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [state, setState] = useState<PresenceState>({
     partnerOnline: false,
     partnerName: "",
+    partnerStatus: "libre",
     streakCount: 0,
+    myStatus: "libre",
   });
 
-  // Presence tracking
+  // Presence tracking with status
   useEffect(() => {
     if (!user) return;
 
@@ -27,17 +33,46 @@ export function useDuoPresence() {
     channel
       .on("presence", { event: "sync" }, () => {
         const presenceState = channel.presenceState();
-        const keys = Object.keys(presenceState).filter(k => k !== user.id);
-        setState(prev => ({ ...prev, partnerOnline: keys.length > 0 }));
+        // Find partner presence
+        for (const [key, values] of Object.entries(presenceState)) {
+          if (key !== user.id && Array.isArray(values) && values.length > 0) {
+            const partnerPresence = values[0] as any;
+            setState(prev => ({
+              ...prev,
+              partnerOnline: true,
+              partnerStatus: partnerPresence.status || "libre",
+            }));
+            return;
+          }
+        }
+        setState(prev => ({ ...prev, partnerOnline: false }));
       })
       .subscribe(async (status) => {
         if (status === "SUBSCRIBED") {
-          await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
+          await channel.track({
+            user_id: user.id,
+            online_at: new Date().toISOString(),
+            status: state.myStatus,
+            display_name: profile?.display_name || "",
+          });
         }
       });
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user, profile]);
+
+  // Update status
+  const setMyStatus = useCallback(async (newStatus: DuoStatus) => {
+    setState(prev => ({ ...prev, myStatus: newStatus }));
+    // Re-track with new status
+    const channel = supabase.channel("sanctuary-presence");
+    await channel.track({
+      user_id: user?.id,
+      online_at: new Date().toISOString(),
+      status: newStatus,
+      display_name: profile?.display_name || "",
+    });
+  }, [user, profile]);
 
   // Load partner name
   useEffect(() => {
@@ -65,7 +100,6 @@ export function useDuoPresence() {
 
     if (!data) return;
 
-    // Count prayers where BOTH partners validated
     const byPrayer: Record<string, Set<string>> = {};
     data.forEach((r: any) => {
       if (!byPrayer[r.prayer_name]) byPrayer[r.prayer_name] = new Set();
@@ -95,9 +129,9 @@ export function useDuoPresence() {
     const today = new Date().toISOString().slice(0, 10);
     await supabase.from("duo_streaks").upsert(
       { prayer_name: prayerName, date: today, user_id: user.id },
-      { onConflict: "prayer_name,date,user_id" }
+      { onConflict: "user_id,prayer_name,date" }
     );
   }, [user]);
 
-  return { ...state, recordStreak };
+  return { ...state, recordStreak, setMyStatus };
 }
