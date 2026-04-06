@@ -1,7 +1,7 @@
 {
-  "name": "Nur al-BinDjib — Alliance Sanctuary",
-  "short_name": "Nur al-BinDjib",
-  "description": "Centre de commande holistique pour l'Alliance",
+  "name": "Nur Al-BinDjib",
+  "short_name": "BinDjib",
+  "description": "Sanctuaire sacré dédié à l'élévation de Binta & Djibril. Notre boussole quotidienne vers l'excellence Fi-d-Dunya wal-Akhirah.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
@@ -11,17 +11,20 @@
     {
       "src": "/favicon.ico",
       "sizes": "64x64",
-      "type": "image/x-icon"
+      "type": "image/x-icon",
+      "purpose": "any maskable"
     },
     {
-      "src": "/icon-192.png",
+      "src": "/favicon.ico",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/x-icon",
+      "purpose": "any maskable"
     },
     {
-      "src": "/icon-512.png",
+      "src": "/favicon.ico",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/x-icon",
+      "purpose": "any maskable"
     }
   ]
 }
