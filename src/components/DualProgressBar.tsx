@@ -9,6 +9,7 @@ interface PartnerInfo {
   totalXp: number;
   level: number;
   emoji: string;
+  role: string;
 }
 
 export function DualProgressBar() {
@@ -16,32 +17,28 @@ export function DualProgressBar() {
   const [partners, setPartners] = useState<PartnerInfo[]>([]);
 
   useEffect(() => {
+    if (!user) return;
     loadBoth();
+
+    // Realtime updates
+    const channel = supabase
+      .channel("dual-progress-rt")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, () => loadBoth())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   const loadBoth = async () => {
-    const { data: profiles } = await supabase.from("profiles").select("user_id, display_name, role");
+    const { data: profiles } = await supabase.from("profiles").select("user_id, display_name, role, total_xp, level");
     if (!profiles) return;
 
-    const infos: PartnerInfo[] = [];
-    for (const p of profiles) {
-      const { data: progress } = await supabase
-        .from("daily_progress")
-        .select("total_xp")
-        .eq("user_id", p.user_id)
-        .order("date", { ascending: false })
-        .limit(1)
-        .single();
-
-      const xp = progress?.total_xp || 0;
-      infos.push({
-        name: p.display_name,
-        totalXp: xp,
-        level: calculateLevel(xp),
-        emoji: p.role === "guardian" ? "🛡️" : "🧭",
-      });
-    }
-    setPartners(infos);
+    setPartners(profiles.map((p: any) => ({
+      name: p.display_name,
+      totalXp: p.total_xp || 0,
+      level: p.level || calculateLevel(p.total_xp || 0),
+      emoji: p.role === "guardian" ? "🛡️" : "🧭",
+      role: p.role,
+    })));
   };
 
   if (partners.length < 2) return null;
@@ -53,22 +50,27 @@ export function DualProgressBar() {
       <h3 className="text-sm font-display font-semibold text-primary flex items-center gap-2">
         📈 Ascension Parallèle
       </h3>
-      {partners.map((p, i) => (
-        <div key={i} className="space-y-1">
-          <div className="flex justify-between text-xs">
-            <span className="text-foreground">{p.emoji} {p.name}</span>
-            <span className="text-muted-foreground">Lvl {p.level}/150</span>
+      {partners.map((p, i) => {
+        const barColor = p.role === "guardian"
+          ? "bg-gradient-to-r from-pink-600/80 to-pink-400"
+          : "bg-gradient-to-r from-blue-600/80 to-blue-400";
+        return (
+          <div key={i} className="space-y-1">
+            <div className="flex justify-between text-xs">
+              <span className="text-foreground">{p.emoji} {p.name}</span>
+              <span className="text-muted-foreground">Lvl {p.level}/150 • {p.totalXp} XP</span>
+            </div>
+            <div className="h-2 rounded-full bg-secondary overflow-hidden">
+              <motion.div
+                className={`h-full rounded-full ${barColor}`}
+                initial={{ width: 0 }}
+                animate={{ width: `${(p.level / maxLvl) * 100}%` }}
+                transition={{ duration: 1, ease: "easeOut" }}
+              />
+            </div>
           </div>
-          <div className="h-2 rounded-full bg-secondary overflow-hidden">
-            <motion.div
-              className={`h-full rounded-full ${i === 0 ? "bg-gradient-to-r from-primary/80 to-primary" : "bg-gradient-to-r from-accent/80 to-accent"}`}
-              initial={{ width: 0 }}
-              animate={{ width: `${(p.level / maxLvl) * 100}%` }}
-              transition={{ duration: 1, ease: "easeOut" }}
-            />
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
