@@ -1,6 +1,8 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
 import { getLevelInfo, getRank, ALLIANCE_REWARDS, getMilestoneMessage, type LevelInfo } from "@/lib/questData";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 interface LevelBarProps {
   totalXp: number;
@@ -9,26 +11,50 @@ interface LevelBarProps {
   partnerName?: string;
 }
 
-export function LevelBar({ totalXp, dailyXp, role = "guide", partnerName = "Partenaire" }: LevelBarProps) {
-  const info = getLevelInfo(totalXp, role);
+export function LevelBar({ totalXp: initialXp, dailyXp, role = "guide", partnerName = "Partenaire" }: LevelBarProps) {
+  const { user } = useAuth();
+  const [totalXp, setTotalXp] = useState(initialXp);
   const [showMilestone, setShowMilestone] = useState(false);
-  const [prevLevel, setPrevLevel] = useState(info.level);
+  const [prevLevel, setPrevLevel] = useState(0);
 
-  // Detect level-up milestone
+  // Sync with prop
+  useEffect(() => { setTotalXp(initialXp); }, [initialXp]);
+
+  // Realtime profile subscription for level-up
   useEffect(() => {
-    if (info.level > prevLevel && info.level % 5 === 0) {
+    if (!user) return;
+    const channel = supabase
+      .channel("level-bar-rt")
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "profiles",
+        filter: `user_id=eq.${user.id}`,
+      }, (payload) => {
+        const newXp = payload.new?.total_xp;
+        if (newXp !== undefined) setTotalXp(newXp);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user]);
+
+  const info = getLevelInfo(totalXp, role);
+
+  // Detect level-up
+  useEffect(() => {
+    if (prevLevel > 0 && info.level > prevLevel) {
       setShowMilestone(true);
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
       setTimeout(() => setShowMilestone(false), 4000);
     }
     setPrevLevel(info.level);
-  }, [info.level, prevLevel]);
+  }, [info.level]);
 
   const size = 120;
   const strokeWidth = 8;
   const radius = (size - strokeWidth) / 2;
   const circumference = radius * 2 * Math.PI;
   const offset = circumference - (info.progress / 100) * circumference;
-
   const rankColor = `hsl(${info.rank.color})`;
   const nextReward = ALLIANCE_REWARDS.find(r => r.level > info.level);
 
@@ -44,9 +70,9 @@ export function LevelBar({ totalXp, dailyXp, role = "guide", partnerName = "Part
             className="glass glow-border-gold rounded-lg p-4 text-center space-y-2"
           >
             <p className="text-2xl">🎉</p>
-            <p className="font-display text-accent text-lg">Milestone Niveau {info.level} !</p>
+            <p className="font-display text-accent text-lg">Level Up ! Niveau {info.level} 👑</p>
             <p className="text-sm text-muted-foreground">
-              {getMilestoneMessage(info.level, partnerName)}
+              {getMilestoneMessage(info.level, partnerName) || `Félicitations ! Continue l'ascension !`}
             </p>
           </motion.div>
         )}
@@ -56,34 +82,19 @@ export function LevelBar({ totalXp, dailyXp, role = "guide", partnerName = "Part
         {/* Circular Progress */}
         <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
           <svg width={size} height={size} className="-rotate-90">
-            <circle
-              cx={size / 2} cy={size / 2} r={radius}
-              fill="none"
-              stroke="hsl(var(--secondary))"
-              strokeWidth={strokeWidth}
-            />
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(var(--secondary))" strokeWidth={strokeWidth} />
             <motion.circle
-              cx={size / 2} cy={size / 2} r={radius}
-              fill="none"
-              stroke={rankColor}
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              strokeDasharray={circumference}
+              cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={rankColor}
+              strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={circumference}
               initial={{ strokeDashoffset: circumference }}
               animate={{ strokeDashoffset: offset }}
               transition={{ duration: 1, ease: "easeOut" }}
-              style={{
-                filter: info.progress >= 80
-                  ? `drop-shadow(0 0 8px ${rankColor})`
-                  : undefined
-              }}
+              style={{ filter: info.progress >= 80 ? `drop-shadow(0 0 8px ${rankColor})` : undefined }}
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-bold" style={{ color: rankColor }}>{info.level}</span>
-            <span className="text-[9px] uppercase tracking-wider text-muted-foreground">
-              {info.rank.name}
-            </span>
+            <span className="text-[9px] uppercase tracking-wider text-muted-foreground">{info.rank.name}</span>
           </div>
         </div>
 
@@ -93,17 +104,13 @@ export function LevelBar({ totalXp, dailyXp, role = "guide", partnerName = "Part
             <span className="text-xl">{info.emoji}</span>
             <div>
               <p className="font-display text-base text-foreground leading-tight">{info.title}</p>
-              <p className="text-xs text-muted-foreground">
-                {info.rank.emoji} Rang {info.rank.name}
-              </p>
+              <p className="text-xs text-muted-foreground">{info.rank.emoji} Rang {info.rank.name}</p>
             </div>
           </div>
-
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold text-primary">{totalXp}</span>
             <span className="text-xs text-muted-foreground">XP total</span>
           </div>
-
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>+{dailyXp} aujourd'hui</span>
             <span>•</span>
