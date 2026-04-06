@@ -1,20 +1,21 @@
+import { forwardRef } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
   { path: "/", icon: "🏠", label: "Home" },
   { path: "/tazkiyah", icon: "🕌", label: "Tazkiyah" },
+  { path: "/miroir", icon: "🪞", label: "Miroir" },
   { path: "/lab", icon: "🧪", label: "Lab" },
-  { path: "/reflexion", icon: "✍️", label: "Réflexion" },
   { path: "/synergie", icon: "♾️", label: "Synergie" },
 ];
 
-export function BottomNav() {
+export const BottomNav = forwardRef<HTMLDivElement>((_, ref) => {
   const location = useLocation();
   const navigate = useNavigate();
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40">
+    <div ref={ref} className="fixed bottom-0 left-0 right-0 z-40">
       <div className="glass border-t border-border">
         <div className="max-w-2xl mx-auto flex">
           {NAV_ITEMS.map(item => {
@@ -46,4 +47,6 @@ export function BottomNav() {
       </div>
     </div>
   );
-}
+});
+
+BottomNav.displayName = "BottomNav";

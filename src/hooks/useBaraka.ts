@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
-import { calculateLevel } from "@/lib/questData";
 import { toast } from "sonner";
 
 // Role-based XP multipliers
@@ -40,7 +39,7 @@ export function useBaraka() {
       source,
     });
 
-    // Update profile total_xp
+    // Update profile total_xp (trigger auto-calculates level)
     const { data: prof } = await supabase
       .from("profiles")
       .select("total_xp")
@@ -48,14 +47,13 @@ export function useBaraka() {
       .single();
 
     const newTotal = (prof?.total_xp || 0) + amount;
-    const newLevel = calculateLevel(newTotal);
 
     await supabase
       .from("profiles")
-      .update({ total_xp: newTotal, level: newLevel })
+      .update({ total_xp: newTotal })
       .eq("user_id", user.id);
 
-    // Log activity (clean source, no double XP display)
+    // Log activity (clean source)
     await supabase.from("activity_feed").insert({
       user_id: user.id,
       action: source,
@@ -82,11 +80,10 @@ export function useBaraka() {
       .single();
 
     const newTotal = Math.max(0, (prof?.total_xp || 0) - amount);
-    const newLevel = calculateLevel(newTotal);
 
     await supabase
       .from("profiles")
-      .update({ total_xp: newTotal, level: newLevel })
+      .update({ total_xp: newTotal })
       .eq("user_id", user.id);
 
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);

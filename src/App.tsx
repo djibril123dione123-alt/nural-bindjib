@@ -6,24 +6,21 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AudioEngineProvider } from "@/hooks/useAudioEngine";
 import { AnimatePresence, motion } from "framer-motion";
+import { SkeletonScreen } from "@/components/SkeletonScreen";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import TazkiyahHub from "./pages/TazkiyahHub";
 import LabHub from "./pages/LabHub";
 import ReflexionHub from "./pages/ReflexionHub";
 import SynergieHub from "./pages/SynergieHub";
+import MiroirAlliance from "./pages/MiroirAlliance";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-        className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full" />
-    </div>
-  );
+  if (loading) return <SkeletonScreen />;
   if (!user) return <Navigate to="/auth" replace />;
   return <>{children}</>;
 }
@@ -45,6 +42,7 @@ function AnimatedRoutes() {
           <Route path="/lab" element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
           <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
           <Route path="/synergie" element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
+          <Route path="/miroir" element={<ProtectedRoute><MiroirAlliance /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </motion.div>
