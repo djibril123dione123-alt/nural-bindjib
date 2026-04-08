@@ -1,3 +1,10 @@
+// ============================================================
+// HifzContent.tsx — Tracker Hifz + Loop Player intégrés
+// Audio format : https://www.everyayah.com/data/{reciter}/{SSS}{AAA}.mp3
+//   SSS = surah 3 chiffres, AAA = ayah 3 chiffres
+// Retry réseau automatique × 2 avant de skipper l'ayah
+// ============================================================
+
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,438 +14,555 @@ import { GoldenParticles, useParticles } from "@/components/GoldenParticles";
 import { SURAHS } from "@/lib/surahData";
 import { toast } from "sonner";
 
-const TOTAL_VERSES = 6236;
-const JUZ_COUNT = 30;
-
-interface HifzEntry {
-  id: string; surah_number: number; surah_name: string; start_verse: number; end_verse: number;
-  total_verses: number; percentage: number; last_reviewed: string; review_count: number;
+// ── URL builder ──────────────────────────────────────────────
+function buildAyahUrl(surahNum: number, ayah: number, reciterId: string): string {
+  const s = String(surahNum).padStart(3, "0");
+  const a = String(ayah).padStart(3, "0");
+  return `https://www.everyayah.com/data/${reciterId}/${s}${a}.mp3`;
 }
 
-export default function HifzContent() {
-  const { user } = useAuth();
-  const [entries, setEntries] = useState<HifzEntry[]>([]);
-  const [selectedSurah, setSelectedSurah] = useState(SURAHS[0]);
-  const [startVerse, setStartVerse] = useState(1);
-  const [endVerse, setEndVerse] = useState(1);
-  const [showForm, setShowForm] = useState(false);
-  const [showReview, setShowReview] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const { trigger, fire } = useParticles();
+const RECITERS = [
+  { id: "Husary_64kbps",             name: "Al-Husary (Murattal)" },
+  { id: "Alafasy_64kbps",            name: "Alafasy" },
+  { id: "AbdulSamad_64kbps",         name: "Abdul Samad" },
+  { id: "Minshawi_Murattal_128kbps", name: "Al-Minshawi" },
+];
 
-  // Audio player state
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [loopMode, setLoopMode] = useState(false);
-  const [playingSurah, setPlayingSurah] = useState<number | null>(null);
-  const [playingVerse, setPlayingVerse] = useState<number>(1);
-  const [loopStart, setLoopStart] = useState(1);
-  const [loopEnd, setLoopEnd] = useState(1);
-  const [loopSurah, setLoopSurah] = useState<number>(1);
-  const [showPlayer, setShowPlayer] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [audioError, setAudioError] = useState(false);
+const TOTAL_VERSES = 6236;
 
-  const filteredSurahs = useMemo(() => {
-    if (!searchQuery) return SURAHS;
-    const q = searchQuery.toLowerCase();
-    return SURAHS.filter(s => s.name.toLowerCase().includes(q) || s.arabicName.includes(q) || String(s.number).includes(q));
-  }, [searchQuery]);
+interface HifzEntry {
+  id: string;
+  surah_number: number;
+  surah_name: string;
+  start_verse: number;
+  end_verse: number;
+  total_verses: number;
+  percentage: number;
+  last_reviewed: string;
+  review_count: number;
+}
 
-  useEffect(() => { if (user) loadEntries(); }, [user]);
+// ════════════════════════════════════════════════════════════
+// HIFZ LOOP PLAYER — Bulletproof A/B Repeat
+// ════════════════════════════════════════════════════════════
+function HifzLoopPlayer({ defaultSurah = 1 }: { defaultSurah?: number }) {
+  const [surahNum,    setSurahNum]    = useState(defaultSurah);
+  const [startAya,   setStartAya]    = useState(1);
+  const [endAya,     setEndAya]      = useState(5);
+  const [currentAya, setCurrentAya]  = useState(1);
+  const [repetitions,setRepetitions] = useState(3);
+  const [currentRep, setCurrentRep]  = useState(1);
+  const [reciterId,  setReciterId]   = useState(RECITERS[0].id);
+  const [isPlaying,  setIsPlaying]   = useState(false);
+  const [isLoading,  setIsLoading]   = useState(false);
+  const [loopCount,  setLoopCount]   = useState(0);
+  const [netErrors,  setNetErrors]   = useState(0);
+  const [showConfig, setShowConfig]  = useState(false);
 
-  // Cleanup audio on unmount
+  const isPlayingRef = useRef(false);
+  const audioRef     = useRef<HTMLAudioElement | null>(null);
+  const retryRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const surah = SURAHS.find((s) => s.number === surahNum) ?? SURAHS[0];
+
   useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current.src = "";
-      }
-    };
+    if (isPlaying) stopAll();
+    setStartAya(1);
+    setEndAya(Math.min(5, surah.verses));
+    setCurrentAya(1);
+    setNetErrors(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surahNum]);
+
+  const stopAll = useCallback(() => {
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    setIsLoading(false);
+    if (retryRef.current) clearTimeout(retryRef.current);
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.oncanplaythrough = null;
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
   }, []);
 
-  const loadEntries = async () => {
+  // Jouer une ayah précise, avec retry
+  const playAya = useCallback((aya: number, rep: number, retry = 0) => {
+    if (!isPlayingRef.current) return;
+
+    setCurrentAya(aya);
+    setCurrentRep(rep);
+    setIsLoading(true);
+
+    if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
+      audioRef.current.oncanplaythrough = null;
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    const url   = buildAyahUrl(surahNum, aya, reciterId);
+    const audio = new Audio(url);
+    audioRef.current = audio;
+
+    audio.oncanplaythrough = () => {
+      setIsLoading(false);
+      setNetErrors(0);
+      if (!isPlayingRef.current) return;
+      audio.play().catch(() => {
+        if (isPlayingRef.current) handleError(aya, rep, retry);
+      });
+    };
+
+    audio.onended = () => {
+      if (!isPlayingRef.current) return;
+      if (rep < repetitions) {
+        playAya(aya, rep + 1);
+      } else {
+        const next = aya + 1;
+        if (next <= endAya) {
+          playAya(next, 1);
+        } else {
+          setLoopCount((c) => c + 1);
+          playAya(startAya, 1); // reboucle
+        }
+      }
+    };
+
+    audio.onerror = () => handleError(aya, rep, retry);
+    audio.load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surahNum, reciterId, repetitions, endAya, startAya]);
+
+  const handleError = useCallback((aya: number, rep: number, retry: number) => {
+    if (!isPlayingRef.current) return;
+    setIsLoading(false);
+    setNetErrors((c) => c + 1);
+
+    if (retry < 2) {
+      console.warn(`[HifzLoop] Erreur ayah ${aya}, retry ${retry + 1}/2`);
+      retryRef.current = setTimeout(() => playAya(aya, rep, retry + 1), 2000);
+    } else {
+      console.error(`[HifzLoop] Ayah ${aya} inaccessible — skip`);
+      toast.warning(`Ayah ${aya} indisponible (réseau) — passage à la suivante`);
+      const next = aya + 1;
+      if (next <= endAya) {
+        setTimeout(() => playAya(next, 1, 0), 500);
+      } else {
+        stopAll();
+        toast.error("Boucle terminée — problème de connexion");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endAya, stopAll]);
+
+  const startLoop = useCallback(() => {
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+    setLoopCount(0);
+    setNetErrors(0);
+    playAya(startAya, 1);
+  }, [startAya, playAya]);
+
+  useEffect(() => () => stopAll(), [stopAll]);
+
+  const progress = endAya > startAya
+    ? Math.max(2, ((currentAya - startAya) / (endAya - startAya)) * 100)
+    : 0;
+
+  return (
+    <div className="glass rounded-2xl p-5 space-y-4 border border-primary/20">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-display font-bold text-foreground">🔄 Hifz Loop</h3>
+          <p className="text-[10px] text-muted-foreground">Répétition espacée ayah par ayah</p>
+        </div>
+        <motion.button whileTap={{ scale: 0.9 }}
+          onClick={() => setShowConfig(!showConfig)}
+          className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground">
+          {showConfig ? "✕" : "⚙️ Config"}
+        </motion.button>
+      </div>
+
+      {/* Sourate */}
+      <div>
+        <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Sourate</label>
+        <select value={surahNum} onChange={(e) => setSurahNum(Number(e.target.value))}
+          disabled={isPlaying}
+          className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground disabled:opacity-50">
+          {SURAHS.map((s) => (
+            <option key={s.number} value={s.number}>
+              {String(s.number).padStart(3, "0")} — {s.name} ({s.arabicName}) · {s.verses}v
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Plage */}
+      <div className="grid grid-cols-2 gap-3">
+        {[
+          { label: "Ayah début", val: startAya, min: 1, max: surah.verses,
+            set: (v: number) => { setStartAya(v); if (v > endAya) setEndAya(v); } },
+          { label: "Ayah fin", val: endAya, min: startAya, max: surah.verses,
+            set: (v: number) => setEndAya(Math.max(startAya, Math.min(surah.verses, v))) },
+        ].map(({ label, val, min, max, set }) => (
+          <div key={label}>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">{label}</label>
+            <input type="number" min={min} max={max} value={val}
+              onChange={(e) => set(Math.max(min, Math.min(max, parseInt(e.target.value) || min)))}
+              disabled={isPlaying}
+              className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground disabled:opacity-50" />
+          </div>
+        ))}
+      </div>
+
+      {/* Config avancée */}
+      <AnimatePresence>
+        {showConfig && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }} className="space-y-3 overflow-hidden">
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Récitateur</label>
+              <select value={reciterId} onChange={(e) => setReciterId(e.target.value)} disabled={isPlaying}
+                className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground disabled:opacity-50">
+                {RECITERS.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">
+                Répétitions par ayah : {repetitions}x
+              </label>
+              <input type="range" min={1} max={10} value={repetitions}
+                onChange={(e) => setRepetitions(Number(e.target.value))}
+                disabled={isPlaying} className="w-full accent-primary" />
+              <div className="flex justify-between text-[9px] text-muted-foreground mt-1">
+                <span>1×</span><span>5×</span><span>10×</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Résumé */}
+      <div className="flex items-center justify-between glass rounded-xl px-3 py-2 text-xs">
+        <span>
+          <span className="font-bold text-primary">{surah.name}</span>
+          <span className="text-muted-foreground"> · v.{startAya}–{endAya} · {repetitions}× chacune</span>
+        </span>
+        <span className="text-[9px] text-accent bg-accent/10 px-2 py-0.5 rounded-full font-mono">
+          {String(surahNum).padStart(3,"0")}{String(startAya).padStart(3,"0")}.mp3
+        </span>
+      </div>
+
+      {/* État lecture */}
+      <AnimatePresence>
+        {isPlaying && (
+          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="glass rounded-xl p-3 space-y-2 border border-primary/30">
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <motion.div className="w-2 h-2 rounded-full bg-primary"
+                  animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+                  transition={{ duration: 0.8, repeat: Infinity }} />
+                <span className="font-bold text-foreground">
+                  {isLoading ? "Chargement..." : `Ayah ${currentAya} · rép. ${currentRep}/${repetitions}`}
+                </span>
+              </div>
+              <span className="text-accent font-bold">🔄 {loopCount} boucle{loopCount > 1 ? "s" : ""}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+              <motion.div className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
+                animate={{ width: `${progress}%` }} transition={{ duration: 0.4 }} />
+            </div>
+            <div className="flex justify-between text-[9px] text-muted-foreground">
+              <span>v.{startAya}</span>
+              <span className="text-primary font-bold">v.{currentAya}</span>
+              <span>v.{endAya}</span>
+            </div>
+            {netErrors > 0 && (
+              <p className="text-[9px] text-amber-400">⚠️ {netErrors} erreur(s) réseau — retry auto</p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Contrôles */}
+      {!isPlaying ? (
+        <motion.button whileTap={{ scale: 0.97 }} onClick={startLoop}
+          className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-sm">
+          ▶ Lancer la Boucle Hifz
+        </motion.button>
+      ) : (
+        <motion.button whileTap={{ scale: 0.97 }} onClick={stopAll}
+          className="w-full py-3 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive font-bold text-sm">
+          ⏹ Arrêter
+        </motion.button>
+      )}
+
+      <p className="text-[9px] text-muted-foreground text-center">
+        Source : everyayah.com · {RECITERS.find((r) => r.id === reciterId)?.name}
+      </p>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+// HIFZ CONTENT — Tracker principal
+// ════════════════════════════════════════════════════════════
+export default function HifzContent() {
+  const { user } = useAuth();
+  const [entries, setEntries]         = useState<HifzEntry[]>([]);
+  const [selectedSurah, setSelected]  = useState(SURAHS[0]);
+  const [startVerse, setStartVerse]   = useState(1);
+  const [endVerse, setEndVerse]       = useState(1);
+  const [showForm, setShowForm]       = useState(false);
+  const [showLoop, setShowLoop]       = useState(false);
+  const [search, setSearch]           = useState("");
+  const [loopSurah, setLoopSurah]     = useState(1);
+  const { trigger, fire }             = useParticles();
+
+  const filtered = useMemo(() => {
+    if (!search) return SURAHS;
+    const q = search.toLowerCase();
+    return SURAHS.filter(
+      (s) => s.name.toLowerCase().includes(q) || s.arabicName.includes(q) || String(s.number).includes(q)
+    );
+  }, [search]);
+
+  useEffect(() => { if (user) load(); }, [user]);
+
+  const load = async () => {
     if (!user) return;
-    const { data } = await supabase.from("hifz_progress").select("*").eq("user_id", user.id).order("updated_at", { ascending: false });
+    const { data } = await supabase.from("hifz_progress").select("*")
+      .eq("user_id", user.id).order("updated_at", { ascending: false });
     if (data) setEntries(data as unknown as HifzEntry[]);
   };
 
-  const percentage = useMemo(() => {
+  const pct = useMemo(() => {
     const range = endVerse - startVerse + 1;
     return Math.min(100, Math.round((range / selectedSurah.verses) * 100));
   }, [startVerse, endVerse, selectedSurah]);
 
   const addEntry = async () => {
-    if (!user) return;
-    if (endVerse < startVerse) { toast.error("Verset fin ≥ verset début"); return; }
+    if (!user || endVerse < startVerse) { toast.error("Verset fin ≥ début"); return; }
     const { error } = await supabase.from("hifz_progress").insert({
       user_id: user.id, surah_number: selectedSurah.number, surah_name: selectedSurah.name,
-      start_verse: startVerse, end_verse: endVerse, total_verses: selectedSurah.verses, percentage,
+      start_verse: startVerse, end_verse: endVerse, total_verses: selectedSurah.verses, percentage: pct,
     });
-    if (!error) { fire(); toast.success(`${selectedSurah.name} ajouté ! +25 Baraka`); setShowForm(false); loadEntries(); }
+    if (!error) { fire(); toast.success(`${selectedSurah.name} ajouté !`); setShowForm(false); load(); }
   };
 
   const reviewEntry = async (entry: HifzEntry) => {
     await supabase.from("hifz_progress").update({
-      last_reviewed: new Date().toISOString(), review_count: entry.review_count + 1, updated_at: new Date().toISOString(),
+      last_reviewed: new Date().toISOString(),
+      review_count: entry.review_count + 1,
+      updated_at: new Date().toISOString(),
     }).eq("id", entry.id);
-    fire(); toast.success(`Révision de ${entry.surah_name} ✨`); loadEntries();
+    fire();
+    toast.success(`Révision de ${entry.surah_name} ✨`);
+    load();
   };
 
   const deleteEntry = async (id: string) => {
-    await supabase.from("hifz_progress").delete().eq("id", id); loadEntries();
+    await supabase.from("hifz_progress").delete().eq("id", id);
+    load();
   };
 
-  const totalProgress = useMemo(() => {
-    if (entries.length === 0) return 0;
-    const versesMemorized = entries.reduce((sum, e) => sum + (e.end_verse - e.start_verse + 1), 0);
-    return Math.round((versesMemorized / TOTAL_VERSES) * 10000) / 100;
+  const totalPct = useMemo(() => {
+    const v = entries.reduce((s, e) => s + (e.end_verse - e.start_verse + 1), 0);
+    return Math.round((v / TOTAL_VERSES) * 10000) / 100;
   }, [entries]);
 
-  const totalVersesMemorized = entries.reduce((sum, e) => sum + (e.end_verse - e.start_verse + 1), 0);
-  const daysSinceReview = (dateStr: string) => Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  const daysSince = (d: string) =>
+    Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
 
-  const srsEntries = useMemo(() => {
-    return [...entries]
-      .map(e => ({ ...e, days: daysSinceReview(e.last_reviewed), urgency: daysSinceReview(e.last_reviewed) / Math.max(e.review_count, 1) }))
-      .filter(e => e.days >= 2).sort((a, b) => b.urgency - a.urgency).slice(0, 5);
-  }, [entries]);
-
-  const juzProgress = useMemo(() => {
-    const versesPerJuz = Math.ceil(TOTAL_VERSES / JUZ_COUNT);
-    return Array.from({ length: JUZ_COUNT }, (_, i) => {
-      const juzStart = i * versesPerJuz;
-      const juzEnd = Math.min((i + 1) * versesPerJuz, TOTAL_VERSES);
-      const overlap = Math.min(totalVersesMemorized, juzEnd) - Math.min(totalVersesMemorized, juzStart);
-      return Math.max(0, Math.min(100, (overlap / (juzEnd - juzStart)) * 100));
-    });
-  }, [totalVersesMemorized]);
-
-  // ─── AUDIO ENGINE ───
-  const getVerseUrl = useCallback((surahNum: number, verseNum: number, reciter: "husary" | "afasy" = "husary") => {
-    const sId = surahNum.toString().padStart(3, "0");
-    const vId = verseNum.toString().padStart(3, "0");
-    if (reciter === "afasy") {
-      return `https://www.everyayah.com/data/Alafasy_64kbps/${sId}${vId}.mp3`;
-    }
-    return `https://www.everyayah.com/data/Husary_64kbps/${sId}${vId}.mp3`;
-  }, []);
-
-  const playVerse = useCallback((surahNum: number, verseNum: number) => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
-    const audio = new Audio();
-    audioRef.current = audio;
-    setAudioError(false);
-
-    const url = getVerseUrl(surahNum, verseNum, "husary");
-    audio.src = url;
-    audio.preload = "auto";
-
-    audio.onerror = () => {
-      // Fallback to Afasy
-      console.warn("Husary failed, trying Afasy...");
-      audio.src = getVerseUrl(surahNum, verseNum, "afasy");
-      audio.onerror = () => {
-        setAudioError(true);
-        setIsPlaying(false);
-        toast.error("Audio indisponible pour ce verset");
-      };
-      audio.play().catch(() => {});
-    };
-
-    audio.onended = () => {
-      if (loopMode) {
-        // In loop mode: play next verse or loop back
-        const nextVerse = verseNum + 1;
-        if (nextVerse <= loopEnd) {
-          setPlayingVerse(nextVerse);
-          playVerse(surahNum, nextVerse);
-        } else {
-          // Loop back to start
-          setPlayingVerse(loopStart);
-          playVerse(surahNum, loopStart);
-        }
-      } else {
-        setIsPlaying(false);
-      }
-    };
-
-    setPlayingSurah(surahNum);
-    setPlayingVerse(verseNum);
-    setIsPlaying(true);
-
-    // Media Session API
-    if ("mediaSession" in navigator) {
-      const surah = SURAHS.find(s => s.number === surahNum);
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: `${surah?.name || "Sourate"} - Verset ${verseNum}`,
-        artist: "Sheikh Al-Husary",
-        album: "Hifz Tracker",
-      });
-    }
-
-    audio.play().catch(() => {
-      setIsPlaying(false);
-      toast.error("Impossible de lancer l'audio");
-    });
-  }, [loopMode, loopStart, loopEnd, getVerseUrl]);
-
-  const stopAudio = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.src = "";
-    }
-    setIsPlaying(false);
-    setPlayingSurah(null);
-  }, []);
-
-  const startLoopPlayback = useCallback((entry: HifzEntry) => {
-    setLoopSurah(entry.surah_number);
-    setLoopStart(entry.start_verse);
-    setLoopEnd(entry.end_verse);
-    setLoopMode(true);
-    setShowPlayer(true);
-    playVerse(entry.surah_number, entry.start_verse);
-  }, [playVerse]);
+  const srsEntries = useMemo(() =>
+    [...entries]
+      .map((e) => ({
+        ...e,
+        days: daysSince(e.last_reviewed),
+        urgency: daysSince(e.last_reviewed) / Math.max(e.review_count, 1),
+      }))
+      .filter((e) => e.days >= 2)
+      .sort((a, b) => b.urgency - a.urgency)
+      .slice(0, 5),
+    [entries]
+  );
 
   return (
-    <div className="relative overflow-hidden space-y-5">
+    <div className="space-y-5 pb-4 relative overflow-hidden">
       <GoldenParticles trigger={trigger} />
 
-      {/* Overall progress */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-6 glow-border-gold">
-        <div className="flex items-center gap-6">
-          <CircularProgress value={totalProgress} max={100} size={100} strokeWidth={8} glowColor="var(--glow-gold)">
+      {/* Progression globale */}
+      <div className="glass rounded-2xl p-5 glow-border-gold">
+        <div className="flex items-center gap-4">
+          <CircularProgress value={totalPct} max={100} size={80} strokeWidth={6}>
             <div className="text-center">
-              <p className="text-lg font-bold text-accent">{totalProgress}%</p>
-              <p className="text-[7px] text-muted-foreground uppercase">Coran</p>
+              <p className="text-base font-bold text-accent">{totalPct}%</p>
+              <p className="text-[7px] text-muted-foreground">Coran</p>
             </div>
           </CircularProgress>
-          <div className="flex-1 space-y-2">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{entries.length} sourates</span>
-              <span>{totalVersesMemorized}/{TOTAL_VERSES} versets</span>
-            </div>
-            <div className="grid grid-cols-15 gap-[2px]">
-              {juzProgress.map((pct, i) => (
-                <div key={i} className="h-3 rounded-sm transition-all" style={{
-                  background: pct > 0 ? `linear-gradient(to top, hsl(var(--primary)) ${pct}%, hsl(var(--secondary)) ${pct}%)` : "hsl(var(--secondary))",
-                }} title={`Juz ${i + 1}: ${Math.round(pct)}%`} />
-              ))}
-            </div>
-            <p className="text-[8px] text-muted-foreground text-center">30 Juz du Mushaf</p>
+          <div className="flex-1 space-y-1 text-xs text-muted-foreground">
+            <p>{entries.length} sourates mémorisées</p>
+            <p>{entries.reduce((s, e) => s + (e.end_verse - e.start_verse + 1), 0)} / {TOTAL_VERSES} versets</p>
+            {srsEntries.length > 0 && (
+              <p className="text-accent font-bold">⚡ {srsEntries.length} révisions urgentes</p>
+            )}
           </div>
         </div>
-      </motion.div>
+      </div>
 
-      {/* Audio Player (floating) */}
-      <AnimatePresence>
-        {showPlayer && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="glass rounded-2xl p-4 space-y-3 border border-accent/30 glow-border-gold"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-display font-bold text-accent uppercase tracking-wider">🎙️ Lecteur Hifz</h3>
-              <button onClick={() => { stopAudio(); setShowPlayer(false); setLoopMode(false); }}
-                className="text-xs text-destructive/60 hover:text-destructive">✕</button>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-semibold text-foreground">
-                {SURAHS.find(s => s.number === loopSurah)?.name || ""}
-              </span>
-              <span className="text-xs text-muted-foreground">v.{loopStart}–{loopEnd}</span>
-            </div>
-
-            {/* Verse range selectors */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] text-muted-foreground mb-1 block">Début</label>
-                <input type="number" min={1} value={loopStart}
-                  onChange={e => setLoopStart(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full bg-secondary/50 border border-border rounded-lg px-2 py-1.5 text-sm text-foreground" />
-              </div>
-              <div>
-                <label className="text-[10px] text-muted-foreground mb-1 block">Fin</label>
-                <input type="number" min={1} value={loopEnd}
-                  onChange={e => setLoopEnd(parseInt(e.target.value) || 1)}
-                  className="w-full bg-secondary/50 border border-border rounded-lg px-2 py-1.5 text-sm text-foreground" />
-              </div>
-            </div>
-
-            {/* Controls */}
-            <div className="flex items-center justify-center gap-4">
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={() => {
-                  if (isPlaying) stopAudio();
-                  else playVerse(loopSurah, loopStart);
-                }}
-                className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold transition-all ${
-                  isPlaying ? "bg-destructive/20 border-2 border-destructive text-destructive" : "bg-primary/20 border-2 border-primary text-primary"
-                }`}
-              >
-                {isPlaying ? "⏸" : "▶"}
-              </motion.button>
-
-              <motion.button
-                whileTap={{ scale: 0.9 }}
-                onClick={() => setLoopMode(!loopMode)}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${
-                  loopMode ? "bg-accent/20 border-accent text-accent" : "border-border text-muted-foreground"
-                }`}
-              >
-                🔁 {loopMode ? "Boucle ON" : "Boucle OFF"}
-              </motion.button>
-            </div>
-
-            {isPlaying && (
-              <p className="text-center text-[10px] text-accent animate-pulse">
-                ▶ Verset {playingVerse} en cours...
-              </p>
-            )}
-            {audioError && (
-              <p className="text-center text-[10px] text-destructive">⚠️ Audio indisponible</p>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Action buttons */}
-      <div className="grid grid-cols-2 gap-3">
-        <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setShowForm(!showForm); setShowReview(false); }}
-          className="py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-sm">
-          {showForm ? "Annuler" : "+ Ajouter"}
+      {/* Boutons actions */}
+      <div className="grid grid-cols-3 gap-2">
+        <motion.button whileTap={{ scale: 0.97 }}
+          onClick={() => { setShowForm(!showForm); setShowLoop(false); }}
+          className="py-2.5 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-xs">
+          {showForm ? "✕ Annuler" : "+ Ajouter"}
         </motion.button>
-        <motion.button whileTap={{ scale: 0.97 }} onClick={() => { setShowReview(!showReview); setShowForm(false); }}
-          className={`py-3 rounded-xl font-bold text-sm border-2 transition-all ${showReview ? "border-accent bg-accent/10 text-accent" : "border-border text-foreground"}`}>
-          🔄 SRS {srsEntries.length > 0 && <span className="ml-1 bg-accent text-primary-foreground text-[9px] px-1.5 py-0.5 rounded-full">{srsEntries.length}</span>}
+        <motion.button whileTap={{ scale: 0.97 }}
+          onClick={() => { setShowLoop(!showLoop); setShowForm(false); }}
+          className={`py-2.5 rounded-xl font-bold text-xs border-2 transition-all ${
+            showLoop ? "border-accent bg-accent/10 text-accent" : "border-border text-foreground"
+          }`}>
+          🔄 Loop
+        </motion.button>
+        <motion.button whileTap={{ scale: 0.97 }}
+          onClick={() => { setShowForm(false); setShowLoop(false); }}
+          className="py-2.5 rounded-xl border border-border text-muted-foreground font-bold text-xs">
+          📋 Liste
         </motion.button>
       </div>
 
-      {/* SRS Review */}
-      <AnimatePresence>
-        {showReview && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden space-y-3">
-            <div className="glass rounded-2xl p-4 border border-accent/30">
-              <h3 className="text-xs uppercase tracking-wider text-accent font-bold mb-3">🧠 À réviser</h3>
-              {srsEntries.length === 0 ? <p className="text-xs text-muted-foreground text-center py-4">Tout est à jour ✨</p> : (
-                <div className="space-y-2">
-                  {srsEntries.map(entry => (
-                    <div key={entry.id} className="flex items-center justify-between bg-secondary/30 rounded-xl p-3">
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{entry.surah_name}</p>
-                        <p className="text-[10px] text-muted-foreground">v.{entry.start_verse}–{entry.end_verse} • {entry.days}j</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <motion.button whileTap={{ scale: 0.9 }} onClick={() => startLoopPlayback(entry)}
-                          className="px-2 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary font-semibold">🎧</motion.button>
-                        <motion.button whileTap={{ scale: 0.9 }} onClick={() => reviewEntry(entry)}
-                          className="px-3 py-1.5 rounded-lg bg-accent/20 border border-accent/30 text-xs text-accent font-bold">Réviser ✓</motion.button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Add form */}
+      {/* Formulaire ajout */}
       <AnimatePresence>
         {showForm && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-            className="glass rounded-2xl p-5 space-y-4 overflow-hidden">
-            <input type="text" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Rechercher une sourate..."
-              className="w-full bg-secondary/50 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {filteredSurahs.map(s => (
-                <button key={s.number} onClick={() => { setSelectedSurah(s); setStartVerse(1); setEndVerse(s.verses); setSearchQuery(""); }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors ${selectedSurah.number === s.number ? "bg-primary/20 border border-primary/30" : "hover:bg-secondary/80"}`}>
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }} className="glass rounded-2xl p-4 space-y-3 overflow-hidden">
+            <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher une sourate..."
+              className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+            <div className="max-h-36 overflow-y-auto space-y-1">
+              {filtered.map((s) => (
+                <button key={s.number}
+                  onClick={() => { setSelected(s); setStartVerse(1); setEndVerse(s.verses); setSearch(""); }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm transition-colors ${
+                    selectedSurah.number === s.number ? "bg-primary/20 border border-primary/30" : "hover:bg-secondary/80"
+                  }`}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-muted-foreground w-6">{s.number}</span>
                     <span className="text-foreground">{s.name}</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground">{s.arabicName} • {s.verses}v</span>
+                  <span className="text-[10px] text-muted-foreground">{s.arabicName} · {s.verses}v</span>
                 </button>
               ))}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Début</label>
-                <input type="number" min={1} max={selectedSurah.verses} value={startVerse}
-                  onChange={e => setStartVerse(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              </div>
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Fin</label>
-                <input type="number" min={1} max={selectedSurah.verses} value={endVerse}
-                  onChange={e => setEndVerse(Math.min(selectedSurah.verses, parseInt(e.target.value) || 1))}
-                  className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-              </div>
+              {[
+                { label: "V. début", val: startVerse, min: 1, max: selectedSurah.verses,
+                  set: (v: number) => setStartVerse(Math.max(1, v)) },
+                { label: "V. fin", val: endVerse, min: startVerse, max: selectedSurah.verses,
+                  set: (v: number) => setEndVerse(Math.max(startVerse, Math.min(selectedSurah.verses, v))) },
+              ].map(({ label, val, min, max, set }) => (
+                <div key={label}>
+                  <label className="text-[10px] text-muted-foreground mb-1 block">{label}</label>
+                  <input type="number" min={min} max={max} value={val}
+                    onChange={(e) => set(parseInt(e.target.value) || min)}
+                    className="w-full bg-secondary/50 border border-border rounded-xl px-3 py-2 text-sm text-foreground" />
+                </div>
+              ))}
             </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">{selectedSurah.name} — {endVerse - startVerse + 1}/{selectedSurah.verses}</span>
-                <span className="text-primary font-bold">{percentage}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-secondary overflow-hidden">
-                <motion.div className="h-full rounded-full bg-gradient-to-r from-primary to-accent" animate={{ width: `${percentage}%` }} />
-              </div>
+            <div className="h-2 rounded-full bg-secondary overflow-hidden">
+              <motion.div className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
+                animate={{ width: `${pct}%` }} />
             </div>
             <motion.button whileTap={{ scale: 0.97 }} onClick={addEntry}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-sm">Ajouter au Hifz</motion.button>
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-accent text-primary-foreground font-bold text-sm">
+              Ajouter au Hifz
+            </motion.button>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Entries */}
-      <div className="space-y-3">
-        {entries.map(entry => {
-          const days = daysSinceReview(entry.last_reviewed);
-          const needsReview = days >= 3;
-          const isCurrentlyPlaying = playingSurah === entry.surah_number && isPlaying;
-          return (
-            <motion.div key={entry.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              whileHover={{ scale: 1.01 }}
-              className={`glass rounded-2xl p-4 space-y-3 transition-all ${needsReview ? "border border-accent/40" : ""} ${isCurrentlyPlaying ? "glow-border-gold" : ""}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <CircularProgress value={Number(entry.percentage)} max={100} size={44} strokeWidth={3}>
-                    <span className="text-[9px] font-bold text-primary">{Math.round(Number(entry.percentage))}</span>
-                  </CircularProgress>
-                  <div>
-                    <h3 className="font-display font-bold text-foreground text-sm">{entry.surah_number}. {entry.surah_name}</h3>
-                    <p className="text-[10px] text-muted-foreground">v.{entry.start_verse}–{entry.end_verse} • {entry.review_count} rév.</p>
+      {/* Loop Player */}
+      <AnimatePresence>
+        {showLoop && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+            <HifzLoopPlayer defaultSurah={loopSurah} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Révisions urgentes (SRS) */}
+      {!showForm && !showLoop && srsEntries.length > 0 && (
+        <div className="glass rounded-2xl p-4 border border-accent/30 space-y-2">
+          <h3 className="text-[10px] uppercase tracking-wider text-accent font-bold">⚡ Révisions urgentes</h3>
+          {srsEntries.map((e) => (
+            <div key={e.id} className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-bold text-foreground">{e.surah_name}</p>
+                <p className="text-[10px] text-muted-foreground">v.{e.start_verse}–{e.end_verse} · {e.days}j</p>
+              </div>
+              <div className="flex gap-2">
+                <motion.button whileTap={{ scale: 0.9 }}
+                  onClick={() => { setLoopSurah(e.surah_number); setShowLoop(true); setShowForm(false); }}
+                  className="px-2 py-1 rounded-lg border border-primary/30 text-[10px] text-primary font-bold">🔄</motion.button>
+                <motion.button whileTap={{ scale: 0.9 }} onClick={() => reviewEntry(e)}
+                  className="px-2 py-1 rounded-lg bg-accent/20 border border-accent/30 text-[10px] text-accent font-bold">✓</motion.button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Liste des entrées */}
+      {!showForm && !showLoop && (
+        <div className="space-y-3">
+          {entries.map((entry) => {
+            const needsReview = daysSince(entry.last_reviewed) >= 3;
+            return (
+              <motion.div key={entry.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                className={`glass rounded-2xl p-4 ${needsReview ? "border border-accent/40" : ""}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <CircularProgress value={Number(entry.percentage)} max={100} size={44} strokeWidth={3}>
+                      <span className="text-[9px] font-bold text-primary">{Math.round(Number(entry.percentage))}</span>
+                    </CircularProgress>
+                    <div>
+                      <h3 className="font-bold text-foreground text-sm">{entry.surah_number}. {entry.surah_name}</h3>
+                      <p className="text-[10px] text-muted-foreground">v.{entry.start_verse}–{entry.end_verse} · {entry.review_count} rév.</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <motion.button whileTap={{ scale: 0.9 }}
+                      onClick={() => { setLoopSurah(entry.surah_number); setShowLoop(true); setShowForm(false); }}
+                      className="px-2 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-[10px] text-primary font-semibold">🔄</motion.button>
+                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => reviewEntry(entry)}
+                      className="px-2 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-[10px] text-primary font-semibold">✓</motion.button>
+                    <motion.button whileTap={{ scale: 0.9 }} onClick={() => deleteEntry(entry.id)}
+                      className="px-2 py-1.5 rounded-xl bg-destructive/10 border border-destructive/20 text-[10px] text-destructive">✕</motion.button>
                   </div>
                 </div>
-                <div className="flex gap-1.5">
-                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => startLoopPlayback(entry)}
-                    className={`px-2 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
-                      isCurrentlyPlaying ? "bg-accent/20 border-accent text-accent" : "bg-secondary/30 border-border text-muted-foreground"
-                    }`}>🎧</motion.button>
-                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => reviewEntry(entry)}
-                    className="px-2 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-xs text-primary font-semibold">✓</motion.button>
-                  <motion.button whileTap={{ scale: 0.9 }} onClick={() => deleteEntry(entry.id)}
-                    className="px-2 py-1.5 rounded-xl bg-destructive/10 border border-destructive/20 text-xs text-destructive">✕</motion.button>
-                </div>
-              </div>
-              {needsReview && <p className="text-[10px] text-accent font-semibold">⚠️ Révision nécessaire ({days}j)</p>}
-            </motion.div>
-          );
-        })}
-        {entries.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            <p className="text-4xl mb-3">📖</p>
-            <p className="text-sm font-display">Commencez votre parcours</p>
-          </div>
-        )}
-      </div>
+                {needsReview && (
+                  <p className="text-[10px] text-accent font-semibold mt-2">
+                    ⚠️ Révision nécessaire ({daysSince(entry.last_reviewed)}j)
+                  </p>
+                )}
+              </motion.div>
+            );
+          })}
+          {entries.length === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="text-4xl mb-3">📖</p>
+              <p className="text-sm font-display">Commencez votre parcours Hifz</p>
+              <p className="text-xs mt-1 italic">« Iqra' bismi rabbika »</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
