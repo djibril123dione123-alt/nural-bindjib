@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,6 +7,7 @@ import { calculateLevel, getRank, getTitle } from "@/lib/questData";
 import { BottomNav } from "@/components/BottomNav";
 import { BackButton } from "@/components/BackButton";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
+import { toast } from "sonner";
 
 interface ProfileData {
   user_id: string;
@@ -23,6 +24,48 @@ interface DailyXp {
   pillars: Record<string, boolean>;
 }
 
+// 🎆 Animation Level Up fullscreen
+function LevelUpOverlay({ level, onClose }: { level: number; onClose: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onClose, 3500);
+    return () => clearTimeout(t);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0, rotate: -10 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+        className="text-center space-y-4 px-6"
+      >
+        <div className="text-8xl">👑</div>
+        <h1 className="text-4xl font-bold" style={{ color: "#F59E0B" }}>
+          LEVEL UP !
+        </h1>
+        <p className="text-2xl font-bold text-emerald-400">Niveau {level}</p>
+        <p className="text-sm text-white/70">Elite Mindset activé ✨</p>
+        <div className="flex justify-center gap-2 mt-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <motion.div
+              key={i}
+              className="w-2 h-2 rounded-full bg-emerald-400"
+              animate={{ y: [-20, 0, -20], opacity: [0, 1, 0] }}
+              transition={{ duration: 1.2, delay: i * 0.1, repeat: Infinity }}
+            />
+          ))}
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function MiroirAlliance() {
   const { user } = useAuth();
   const { partnerOnline, partnerStatus, streakCount } = useDuoPresence();
@@ -31,6 +74,8 @@ export default function MiroirAlliance() {
   const [activity, setActivity] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [bothComplete, setBothComplete] = useState(false);
+  const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
+  const prevLevels = useRef<Record<string, number>>({});
 
   const today = new Date().toISOString().slice(0, 10);
   const dailyTarget = 150;
@@ -41,7 +86,20 @@ export default function MiroirAlliance() {
 
     const channel = supabase
       .channel("miroir-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadAll())
+      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload: any) => {
+        // 🛑 FIX : Détecter Level Up en temps réel
+        const updated = payload.new as ProfileData;
+        if (updated?.user_id === user.id) {
+          const newLevel = updated.level || calculateLevel(updated.total_xp || 0);
+          const oldLevel = prevLevels.current[updated.user_id] || 0;
+          if (newLevel > oldLevel && oldLevel > 0) {
+            setLevelUpLevel(newLevel);
+          }
+          prevLevels.current[updated.user_id] = newLevel;
+        }
+        loadAll();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_tasks" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "salat_tracking" }, () => loadAll())
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_feed" }, () => loadAll())
       .on("postgres_changes", { event: "*", schema: "public", table: "daily_progress" }, () => loadAll())
@@ -53,52 +111,75 @@ export default function MiroirAlliance() {
   const loadAll = async () => {
     if (!user) return;
 
-    // Load profiles
     const { data: profs } = await supabase.from("profiles").select("*");
-    if (profs) setProfiles(profs as ProfileData[]);
+    if (profs) {
+      setProfiles(profs as ProfileData[]);
+      // Initialiser les niveaux précédents au premier chargement
+      profs.forEach((p: any) => {
+        if (!prevLevels.current[p.user_id]) {
+          prevLevels.current[p.user_id] = p.level || calculateLevel(p.total_xp || 0);
+        }
+      });
+    }
 
-    // Load today's salat for both
+    // 🛑 FIX : Charger les tâches user_tasks pour TOUS les piliers
+    const { data: tasksData } = await supabase
+      .from("user_tasks")
+      .select("user_id, pillar, completed")
+      .eq("date", today)
+      .eq("completed", true);
+
+    // Salat pour le pilier FAITH
     const { data: salatData } = await supabase
       .from("salat_tracking")
       .select("user_id, prayer_name, completed")
       .eq("date", today)
       .eq("completed", true);
 
-    if (salatData && profs) {
+    if (profs) {
       const dailies: DailyXp[] = profs.map((p: any) => {
-        const userSalat = salatData.filter((s: any) => s.user_id === p.user_id);
+        const userTasks = (tasksData || []).filter((t: any) => t.user_id === p.user_id);
+        const userSalat = (salatData || []).filter((s: any) => s.user_id === p.user_id);
+
+        // 🛑 FIX : Calculer chaque pilier correctement
+        const bodyTasks = userTasks.filter((t: any) => t.pillar === "body");
+        const mindTasks = userTasks.filter((t: any) => t.pillar === "mind");
+        const lifeTasks = userTasks.filter((t: any) => t.pillar === "life");
+
         return {
           userId: p.user_id,
-          xp: userSalat.length * 10, // simplified daily XP from salat
+          xp: userTasks.length * 10 + userSalat.length * 10,
           pillars: {
-            faith: userSalat.length >= 5,
+            body: bodyTasks.length >= 3,   // 3+ tâches BODY
+            mind: mindTasks.length >= 2,   // 2+ tâches MIND
+            faith: userSalat.length >= 5,  // 5 prières
+            life: lifeTasks.length >= 2,   // 2+ tâches LIFE
           },
         };
       });
       setDailyXp(dailies);
 
-      // Check if both completed 5+ prayers
       const allDone = profs.length >= 2 && profs.every((p: any) => {
-        const count = salatData.filter((s: any) => s.user_id === p.user_id).length;
+        const count = (salatData || []).filter((s: any) => s.user_id === p.user_id).length;
         return count >= 5;
       });
       setBothComplete(allDone);
     }
 
-    // Load daily progress for XP
+    // daily_progress pour XP précise
     const { data: progData } = await supabase
       .from("daily_progress")
       .select("user_id, daily_xp")
       .eq("date", today);
 
-    if (progData && profs) {
+    if (progData) {
       setDailyXp(prev => prev.map(d => {
-        const prog = progData.find((p: any) => p.user_id === d.userId);
+        const prog = (progData as any[]).find(p => p.user_id === d.userId);
         return prog ? { ...d, xp: prog.daily_xp || d.xp } : d;
       }));
     }
 
-    // Activity feed (deduplicated)
+    // Activity feed
     const { data: actData } = await supabase
       .from("activity_feed")
       .select("*")
@@ -120,6 +201,26 @@ export default function MiroirAlliance() {
     setLoading(false);
   };
 
+  // 🛑 FIX : Bouton d'encouragement instantané
+  const sendEncouragement = async () => {
+    if (!user) return;
+    const me = profiles.find(p => p.user_id === user.id);
+    const partner = profiles.find(p => p.user_id !== user.id);
+    if (!partner || !me) return;
+
+    const message = me.role === "guide"
+      ? `Djibril pense à toi et t'encourage pour ton Master ! 🤍`
+      : `Binta pense à toi et t'encourage ! 🤍`;
+
+    await supabase.from("activity_feed").insert({
+      user_id: user.id,
+      action: `💌 ${message}`,
+      xp_earned: 0,
+    });
+
+    toast.success("Message d'encouragement envoyé ✨");
+  };
+
   const me = profiles.find(p => p.user_id === user?.id);
   const partner = profiles.find(p => p.user_id !== user?.id);
 
@@ -136,10 +237,18 @@ export default function MiroirAlliance() {
 
   return (
     <div className="min-h-screen bg-background pb-20">
+      {/* Level Up Overlay */}
+      <AnimatePresence>
+        {levelUpLevel !== null && (
+          <LevelUpOverlay level={levelUpLevel} onClose={() => setLevelUpLevel(null)} />
+        )}
+      </AnimatePresence>
+
       <BackButton />
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 pt-16">
+
         {/* Header */}
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-1 pt-8">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-1">
           <h1 className="text-2xl font-display font-bold text-gradient-emerald">🪞 Miroir de l'Alliance</h1>
           <p className="text-xs text-muted-foreground">Ascension synchronisée en temps réel</p>
           {streakCount > 0 && (
@@ -151,7 +260,7 @@ export default function MiroirAlliance() {
           )}
         </motion.div>
 
-        {/* Monumental Vertical Bars */}
+        {/* Barres verticales */}
         {me && partner && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
             className="glass rounded-2xl p-6 glow-border-gold">
@@ -175,21 +284,37 @@ export default function MiroirAlliance() {
               />
             </div>
 
-            {/* Pillar icons */}
+            {/* 🛑 FIX : Piliers avec état correct pour BODY/MIND/FAITH/LIFE */}
             <div className="grid grid-cols-2 gap-4 mt-4">
               {[me, partner].map(p => {
                 const dx = dailyXp.find(d => d.userId === p.user_id);
                 return (
                   <div key={p.user_id} className="flex items-center justify-center gap-3">
-                    {["⚔️", "📚", "🕌", "🏠"].map((icon, i) => {
-                      const pillarKeys = ["body", "mind", "faith", "life"];
-                      const done = dx?.pillars?.[pillarKeys[i]];
+                    {[
+                      { icon: "⚔️", key: "body", label: "Corps" },
+                      { icon: "📚", key: "mind", label: "Esprit" },
+                      { icon: "🕌", key: "faith", label: "Foi" },
+                      { icon: "🏠", key: "life", label: "Vie" },
+                    ].map(pillar => {
+                      const done = dx?.pillars?.[pillar.key];
                       return (
-                        <motion.span key={i}
-                          animate={done ? { scale: [1, 1.2, 1] } : {}}
-                          className={`text-lg transition-all ${done ? "opacity-100 drop-shadow-[0_0_6px_rgba(16,185,129,0.6)]" : "opacity-30"}`}>
-                          {icon}
-                        </motion.span>
+                        <div key={pillar.key} className="flex flex-col items-center gap-0.5">
+                          <motion.span
+                            key={`${p.user_id}-${pillar.key}-${done}`}
+                            animate={done ? { scale: [1, 1.3, 1] } : {}}
+                            transition={{ duration: 0.4 }}
+                            className={`text-lg transition-all ${
+                              done
+                                ? "opacity-100 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]"
+                                : "opacity-25 grayscale"
+                            }`}
+                          >
+                            {pillar.icon}
+                          </motion.span>
+                          <span className={`text-[7px] ${done ? "text-emerald-400" : "text-muted-foreground/50"}`}>
+                            {pillar.label}
+                          </span>
+                        </div>
                       );
                     })}
                   </div>
@@ -198,6 +323,15 @@ export default function MiroirAlliance() {
             </div>
           </motion.div>
         )}
+
+        {/* 🛑 FIX : Bouton d'encouragement instantané */}
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={sendEncouragement}
+          className="w-full py-3 rounded-xl glass border border-accent/30 text-accent text-sm font-bold hover:bg-accent/5 transition-all"
+        >
+          💌 Envoyer un encouragement instantané
+        </motion.button>
 
         {/* Synergy Bonus */}
         <motion.div
@@ -209,10 +343,10 @@ export default function MiroirAlliance() {
         >
           <p className="text-sm font-display font-semibold text-accent">🏆 Bonus Synergie</p>
           {bothComplete ? (
-            <p className="text-xs text-accent font-bold">✨ Les deux Alter Egos ont atteint 100% ! +100 XP !</p>
+            <p className="text-xs text-accent font-bold">✨ Les deux ont atteint 100% ! +100 XP !</p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Si les deux atteignent 5/6 prières, <span className="text-accent font-bold">+100 XP Synergie</span>
+              Si les deux atteignent 5/5 prières, <span className="text-accent font-bold">+100 XP Synergie</span>
             </p>
           )}
         </motion.div>
@@ -224,7 +358,14 @@ export default function MiroirAlliance() {
             <div className="flex-1">
               <p className="text-sm font-semibold text-foreground">{partner.display_name}</p>
               <p className="text-[10px] text-muted-foreground">
-                {partnerOnline ? `En ligne • ${partnerStatus === "etudie" ? "📚 Étudie" : partnerStatus === "endormi" ? "🌙 Dort" : partnerStatus === "occupe" ? "🔴 Occupé" : "🟢 Libre"}` : "Hors-ligne"}
+                {partnerOnline
+                  ? `En ligne • ${
+                      partnerStatus === "etudie" ? "📚 Étudie"
+                      : partnerStatus === "endormi" ? "🌙 Dort"
+                      : partnerStatus === "occupe" ? "🔴 Occupé"
+                      : "🟢 Libre"
+                    }`
+                  : "Hors-ligne"}
               </p>
             </div>
             <div className="text-right">
@@ -267,26 +408,23 @@ function VerticalBar({ profile, dailyXp, target, color, isSelf }: {
   const pct = Math.min(100, (dailyXp / target) * 100);
   const level = profile.level || calculateLevel(profile.total_xp || 0);
   const rank = getRank(level);
-  const { title } = getTitle(level, profile.role as "guide" | "guardian");
-  
-  const barBg = color === "blue" 
-    ? "from-blue-600 to-blue-400" 
-    : "from-pink-600 to-pink-400";
+
+  const barBg = color === "blue" ? "from-blue-600 to-blue-400" : "from-pink-600 to-pink-400";
   const borderColor = color === "blue" ? "border-blue-500/30" : "border-pink-500/30";
   const glowShadow = color === "blue"
-    ? "0 0 20px rgba(59,130,246,0.3)"
-    : "0 0 20px rgba(244,114,182,0.3)";
+    ? "0 0 20px rgba(59,130,246,0.4)"
+    : "0 0 20px rgba(244,114,182,0.4)";
 
   return (
     <div className="flex flex-col items-center gap-2 flex-1">
-      {/* Name & level */}
       <span className="text-xl">{profile.avatar_emoji || (profile.role === "guide" ? "🧭" : "🛡️")}</span>
       <p className="text-xs font-display font-bold text-foreground">{profile.display_name}</p>
       <p className="text-[9px] text-accent">{rank.emoji} Lvl {level}</p>
 
-      {/* Vertical bar */}
-      <div className={`relative w-12 rounded-full border ${borderColor} overflow-hidden bg-secondary/30`}
-        style={{ height: 160, boxShadow: pct > 50 ? glowShadow : undefined }}>
+      <div
+        className={`relative w-12 rounded-full border ${borderColor} overflow-hidden bg-secondary/30`}
+        style={{ height: 160, boxShadow: pct > 50 ? glowShadow : undefined }}
+      >
         <motion.div
           className={`absolute bottom-0 left-0 right-0 rounded-full bg-gradient-to-t ${barBg}`}
           initial={{ height: 0 }}
@@ -298,7 +436,6 @@ function VerticalBar({ profile, dailyXp, target, color, isSelf }: {
         </div>
       </div>
 
-      {/* Daily XP */}
       <p className="text-sm font-bold text-primary">{dailyXp}</p>
       <p className="text-[8px] text-muted-foreground">XP aujourd'hui</p>
       {isSelf && <span className="text-[8px] text-primary bg-primary/10 px-2 py-0.5 rounded-full">Vous</span>}
