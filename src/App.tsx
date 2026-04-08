@@ -7,8 +7,10 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AudioEngineProvider } from "@/hooks/useAudioEngine";
 import { AnimatePresence, motion } from "framer-motion";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
+
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Profile from "./pages/Profile";           // 🛑 FIX : import ajouté
 import TazkiyahHub from "./pages/TazkiyahHub";
 import LabHub from "./pages/LabHub";
 import ReflexionHub from "./pages/ReflexionHub";
@@ -29,7 +31,8 @@ function AnimatedRoutes() {
   const location = useLocation();
   return (
     <AnimatePresence mode="wait">
-      <motion.div key={location.pathname}
+      <motion.div
+        key={location.pathname}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
@@ -37,12 +40,22 @@ function AnimatedRoutes() {
       >
         <Routes location={location}>
           <Route path="/auth" element={<Auth />} />
+
+          {/* Routes protégées */}
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+
+          {/* 🛑 FIX : Route /profile ajoutée */}
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+
+          {/* 🛑 FIX : /dashboard redirige vers / (Index = Dashboard) */}
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+
           <Route path="/tazkiyah" element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
           <Route path="/lab" element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
           <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
           <Route path="/synergie" element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
           <Route path="/miroir" element={<ProtectedRoute><MiroirAlliance /></ProtectedRoute>} />
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </motion.div>
