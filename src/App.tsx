@@ -10,7 +10,7 @@ import { SkeletonScreen } from "@/components/SkeletonScreen";
 
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
-import Profile from "./pages/Profile";           // 🛑 FIX : import ajouté
+import Profile from "./pages/Profile";
 import TazkiyahHub from "./pages/TazkiyahHub";
 import LabHub from "./pages/LabHub";
 import ReflexionHub from "./pages/ReflexionHub";
@@ -20,10 +20,18 @@ import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
 
+// 🛑 FIX CRITIQUE : ProtectedRoute attend explicitement la fin du loading
+// avant de décider de rediriger — évite la boucle auth et l'écran noir
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
+
+  // Phase de chargement : on n'agit PAS encore — skeleton screen premium
   if (loading) return <SkeletonScreen />;
+
+  // Auth confirmée absente : redirection propre
   if (!user) return <Navigate to="/auth" replace />;
+
+  // Auth OK : on rend les enfants
   return <>{children}</>;
 }
 
@@ -43,13 +51,8 @@ function AnimatedRoutes() {
 
           {/* Routes protégées */}
           <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-
-          {/* 🛑 FIX : Route /profile ajoutée */}
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-
-          {/* 🛑 FIX : /dashboard redirige vers / (Index = Dashboard) */}
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
-
           <Route path="/tazkiyah" element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
           <Route path="/lab" element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
           <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
