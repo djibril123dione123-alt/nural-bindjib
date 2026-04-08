@@ -1,5 +1,5 @@
 // ============================================================
-// useQuestEngine.ts — Anti-Race-Condition
+// useQuestEngine.ts — Anti-Race-Condition V3
 //
 // TOUS les changements XP passent par les RPC Supabase :
 //   add_xp(p_user_id, p_amount, p_source)  → { new_xp, new_level, leveled_up }
@@ -14,233 +14,306 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { PILLARS, getPillarsForRole, type Quest } from "@/lib/questData";
 import { toast } from "sonner";
 
 interface QuestState { [questId: string]: boolean; }
 interface PillarProgress { [pillarId: string]: number; }
-interface CustomQuest { id: string; label: string; pillar: string; xp_value: number; }
 
-export interface QuestEngineReturn {
-  completed: QuestState;
-  toggleQuest: (questId: string, pillar: string, xpValue?: number) => Promise<void>;
-  totalXp: number;
-  dailyXp: number;
-  pillarProgress: PillarProgress;
-  applyPenalty: (amount: number, reason: string) => Promise<void>;
-  confetti: "levelup" | "baraka" | null;
-  addCustomQuest: (pillarId: string, label: string) => Promise<void>;
-  deleteCustomQuest: (questId: string, pillarId: string) => Promise<void>;
-  getCustomQuestsForPillar: (pillarId: string) => CustomQuest[];
+interface CustomQuestRow {
+  id: string;
+  user_id: string;
+  title: string;
+  category: string;
+  xp: number;
 }
 
-const DEFAULT_XP = 10;
+export interface QuestEngineReturn {
+  completed:              QuestState;
+  toggleQuest:            (questId: string) => Promise<void>;
+  totalXp:                number;
+  dailyXp:                number;
+  pillarProgress:         PillarProgress;
+  applyPenalty:           (amount: number, reason?: string) => Promise<void>;
+  confetti:               boolean;
+  addCustomQuest:         (pillarId: string, label: string, xp: number) => Promise<void>;
+  deleteCustomQuest:      (questId: string) => Promise<void>;
+  getCustomQuestsForPillar: (pillarId: string) => Quest[];
+}
+
+const STORAGE_KEY   = "nur-albindjib-quests";
+const XP_STORAGE_KEY = "nur-albindjib-total-xp";
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function loadLocalState(): QuestState {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw);
+    if (data.date !== getTodayKey()) return {};
+    return data.completed || {};
+  } catch { return {}; }
+}
+
+function loadLocalXp(): number {
+  try { return parseInt(localStorage.getItem(XP_STORAGE_KEY) || "0", 10); }
+  catch { return 0; }
+}
 
 export function useQuestEngine(): QuestEngineReturn {
   const { user, profile } = useAuth();
-  const [completed, setCompleted]         = useState<QuestState>({});
-  const [totalXp, setTotalXp]             = useState(0);
-  const [dailyXp, setDailyXp]             = useState(0);
+  const role = (profile?.role as "guide" | "guardian") ?? "guide";
+
+  const [completed,      setCompleted]      = useState<QuestState>(loadLocalState);
+  const [totalXp,        setTotalXp]        = useState<number>(loadLocalXp);
+  const [dailyXp,        setDailyXp]        = useState<number>(0);
   const [pillarProgress, setPillarProgress] = useState<PillarProgress>({});
-  const [confetti, setConfetti]           = useState<"levelup" | "baraka" | null>(null);
-  const [customQuests, setCustomQuests]   = useState<CustomQuest[]>([]);
+  const [confetti,       setConfetti]       = useState<boolean>(false);
+  const [customQuests,   setCustomQuests]   = useState<CustomQuestRow[]>([]);
 
-  // Mutex léger — empêche les double-clics d'envoyer 2 requêtes
+  // Mutex léger — empêche les double-clics
   const pending = useRef<Set<string>>(new Set());
-  const today   = new Date().toISOString().slice(0, 10);
-  const role    = profile?.role ?? "guide";
+  const today   = getTodayKey();
 
-  // ─── Chargement initial ─────────────────────────────────
-  const loadState = useCallback(async () => {
+  // ─── Charger depuis Supabase ─────────────────────────────
+  const loadFromBackend = useCallback(async () => {
     if (!user) return;
 
-    const [tasksRes, profRes, dpRes, cqRes] = await Promise.all([
-      supabase.from("user_tasks").select("task_id,completed,xp_value,pillar")
-        .eq("user_id", user.id).eq("date", today),
-      supabase.from("profiles").select("total_xp").eq("user_id", user.id).single(),
-      supabase.from("daily_progress").select("daily_xp")
+    const [dpRes, profRes, cqRes] = await Promise.all([
+      supabase.from("daily_progress").select("completed_quests,daily_xp,total_xp")
         .eq("user_id", user.id).eq("date", today).maybeSingle(),
+      supabase.from("profiles").select("total_xp").eq("user_id", user.id).single(),
       supabase.from("custom_quests").select("*").eq("user_id", user.id),
     ]);
 
-    const completedMap: QuestState = {};
-    const pillarDone: Record<string, number> = {};
-    const pillarTotal: Record<string, number> = {};
+    if (dpRes.data) {
+      const quests = (dpRes.data.completed_quests || {}) as QuestState;
+      setCompleted(quests);
+      setDailyXp(dpRes.data.daily_xp || 0);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ date: today, completed: quests }));
+    }
 
-    (tasksRes.data ?? []).forEach((t: any) => {
-      if (t.completed) completedMap[t.task_id] = true;
-      if (t.pillar) {
-        pillarTotal[t.pillar] = (pillarTotal[t.pillar] ?? 0) + 1;
-        if (t.completed) pillarDone[t.pillar] = (pillarDone[t.pillar] ?? 0) + 1;
-      }
-    });
+    if (profRes.data) {
+      const xp = profRes.data.total_xp || 0;
+      setTotalXp(xp);
+      localStorage.setItem(XP_STORAGE_KEY, String(xp));
+    }
 
-    setCompleted(completedMap);
-    setTotalXp(profRes.data?.total_xp ?? 0);
-    setDailyXp(dpRes.data?.daily_xp ?? 0);
-    setCustomQuests((cqRes.data ?? []) as CustomQuest[]);
-
-    // Recalculer progression piliers
-    const progress: PillarProgress = {};
-    Object.keys(pillarTotal).forEach((p) => {
-      progress[p] = Math.round(((pillarDone[p] ?? 0) / pillarTotal[p]) * 100);
-    });
-    setPillarProgress(progress);
+    if (cqRes.data) setCustomQuests(cqRes.data as CustomQuestRow[]);
   }, [user, today]);
 
   useEffect(() => {
     if (!user) return;
-    loadState();
+    loadFromBackend();
 
+    // Realtime : mise à jour XP depuis n'importe quelle source
     const ch = supabase
       .channel(`quest-engine-${user.id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_tasks",
-          filter: `user_id=eq.${user.id}` }, () => loadState())
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles",
-          filter: `user_id=eq.${user.id}` }, (p: any) => {
-        if (p.new?.total_xp !== undefined) setTotalXp(p.new.total_xp);
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "profiles",
+        filter: `user_id=eq.${user.id}`,
+      }, (payload: any) => {
+        if (payload.new?.total_xp !== undefined) {
+          setTotalXp(payload.new.total_xp);
+          localStorage.setItem(XP_STORAGE_KEY, String(payload.new.total_xp));
+        }
       })
       .subscribe();
 
     return () => { supabase.removeChannel(ch); };
-  }, [user, loadState]);
+  }, [user, loadFromBackend]);
 
-  // ─── Toggle tâche — 100% atomique via RPC ───────────────
-  const toggleQuest = useCallback(async (
-    questId: string,
-    pillar: string,
-    xpValue = DEFAULT_XP
-  ) => {
+  // ─── Toutes les quêtes disponibles ──────────────────────
+  const allPillars = getPillarsForRole(role);
+  const allQuests: Quest[] = [
+    ...allPillars.flatMap((p) => p.quests),
+    ...customQuests.map((cq) => ({ id: cq.id, label: cq.title, xp: cq.xp })),
+  ];
+
+  // ─── Calculer la progression des piliers ───────────────
+  const computePillarProgress = useCallback((c: QuestState): PillarProgress => {
+    const result: PillarProgress = {};
+    allPillars.forEach((p) => {
+      const required = p.quests.filter((q) => !q.optional);
+      if (required.length === 0) { result[p.id] = 0; return; }
+      const done = required.filter((q) => c[q.id]).length;
+      result[p.id] = Math.round((done / required.length) * 100);
+    });
+    return result;
+  }, [allPillars]);
+
+  useEffect(() => {
+    setPillarProgress(computePillarProgress(completed));
+  }, [completed, computePillarProgress]);
+
+  // ─── Toggle quête ────────────────────────────────────────
+  const toggleQuest = useCallback(async (questId: string) => {
     if (!user || pending.current.has(questId)) return;
+
+    const quest   = allQuests.find((q) => q.id === questId);
+    if (!quest) return;
+
     pending.current.add(questId);
 
-    const wasDone  = completed[questId] ?? false;
-    const nowDone  = !wasDone;
+    const wasDone = completed[questId] ?? false;
+    const nowDone = !wasDone;
 
-    // Optimistic update
-    setCompleted((prev) => ({ ...prev, [questId]: nowDone }));
+    // Optimistic UI
+    const nextCompleted = { ...completed, [questId]: nowDone };
+    if (!nowDone) delete nextCompleted[questId];
+    setCompleted(nextCompleted);
 
     try {
-      // 1. Persister dans user_tasks (UPSERT — clé unique user_id+task_id+date)
-      const { error: taskErr } = await supabase.from("user_tasks").upsert({
-        user_id: user.id, task_id: questId, date: today,
-        completed: nowDone,
-        completed_at: nowDone ? new Date().toISOString() : null,
-        xp_value: xpValue, pillar,
-      }, { onConflict: "user_id,task_id,date" });
-
-      if (taskErr) throw taskErr;
-
-      // 2. XP atomique via RPC — aucune race condition possible
+      // ── 1. RPC atomique XP ──────────────────────────────
       if (nowDone) {
         const { data: res, error: xpErr } = await supabase.rpc("add_xp", {
           p_user_id: user.id,
-          p_amount: xpValue,
-          p_source: `task_${questId}`,
+          p_amount:  quest.xp,
+          p_source:  `task_${questId}`,
         });
         if (xpErr) throw xpErr;
 
         const row = Array.isArray(res) ? res[0] : res;
         if (row) {
           setTotalXp(row.new_xp);
+          localStorage.setItem(XP_STORAGE_KEY, String(row.new_xp));
 
-          // ✅ Confetti SEULEMENT si level-up réel
+          // Confetti UNIQUEMENT sur level-up réel
           if (row.leveled_up) {
-            setConfetti("levelup");
+            setConfetti(true);
             toast.success(`👑 Level ${row.new_level} débloqué !`, { duration: 4000 });
-            setTimeout(() => setConfetti(null), 4500);
+            setTimeout(() => setConfetti(false), 4500);
           }
         }
       } else {
         const { data: newXp, error: xpErr } = await supabase.rpc("remove_xp", {
           p_user_id: user.id,
-          p_amount: xpValue,
-          p_source: `task_unchecked_${questId}`,
+          p_amount:  quest.xp,
+          p_source:  `task_unchecked_${questId}`,
         });
         if (xpErr) throw xpErr;
-        if (newXp !== null && newXp !== undefined) setTotalXp(newXp);
+        if (newXp !== null && newXp !== undefined) {
+          setTotalXp(newXp);
+          localStorage.setItem(XP_STORAGE_KEY, String(newXp));
+        }
       }
 
-      // 3. Mise à jour daily_progress
-      const newDaily = nowDone ? dailyXp + xpValue : Math.max(0, dailyXp - xpValue);
+      // ── 2. daily_progress UPSERT ─────────────────────────
+      const newDaily = nowDone
+        ? dailyXp + quest.xp
+        : Math.max(0, dailyXp - quest.xp);
+
       await supabase.from("daily_progress").upsert(
-        { user_id: user.id, date: today, daily_xp: newDaily },
+        {
+          user_id:          user.id,
+          date:             today,
+          daily_xp:         newDaily,
+          completed_quests: nextCompleted,
+        },
         { onConflict: "user_id,date" }
       );
       setDailyXp(newDaily);
 
-      // 4. ✅ Confetti Baraka SEULEMENT au franchissement du seuil
+      // ── 3. Confetti Baraka au franchissement du seuil ────
       const barakaTarget = role === "guardian" ? 300 : 150;
       if (nowDone && newDaily >= barakaTarget && dailyXp < barakaTarget) {
-        setConfetti("baraka");
+        setConfetti(true);
         toast.success("✨ Objectif Baraka atteint ! +50 XP bonus !", { duration: 4000 });
 
-        // Bonus atomique
         const { data: bonusRes } = await supabase.rpc("add_xp", {
-          p_user_id: user.id, p_amount: 50, p_source: "baraka_bonus",
+          p_user_id: user.id,
+          p_amount:  50,
+          p_source:  "baraka_bonus",
         });
         const bonusRow = Array.isArray(bonusRes) ? bonusRes[0] : bonusRes;
-        if (bonusRow) setTotalXp(bonusRow.new_xp);
-
-        setTimeout(() => setConfetti(null), 4500);
+        if (bonusRow) {
+          setTotalXp(bonusRow.new_xp);
+          localStorage.setItem(XP_STORAGE_KEY, String(bonusRow.new_xp));
+        }
+        setTimeout(() => setConfetti(false), 4500);
       }
 
-      // 5. Activity feed
+      // ── 4. Activity feed ─────────────────────────────────
       await supabase.from("activity_feed").insert({
-        user_id: user.id,
-        action: nowDone
-          ? `a validé une tâche [${pillar}] +${xpValue} XP`
-          : `a décoché une tâche [${pillar}] -${xpValue} XP`,
-        xp_earned: nowDone ? xpValue : -xpValue,
+        user_id:   user.id,
+        action:    nowDone
+          ? `a terminé "${quest.label}" +${quest.xp} XP`
+          : `a décoché "${quest.label}" -${quest.xp} XP`,
+        xp_earned: nowDone ? quest.xp : -quest.xp,
       });
 
+      // ── 5. Persister localStorage ─────────────────────────
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ date: today, completed: nextCompleted }));
+
     } catch (err) {
-      // Rollback
-      setCompleted((prev) => ({ ...prev, [questId]: wasDone }));
-      console.error("[QuestEngine]", err);
-      toast.error("Erreur sync — réessaie.");
+      // Rollback optimistic
+      setCompleted(completed);
+      console.error("[QuestEngine] toggleQuest error:", err);
+      toast.error("Erreur de synchronisation — réessaie.");
     } finally {
       pending.current.delete(questId);
-      loadState();
     }
-  }, [user, completed, dailyXp, role, today, loadState]);
+  }, [user, completed, dailyXp, allQuests, role, today]);
 
-  // ─── Pénalité manuelle (boutons, minuit) ────────────────
-  const applyPenalty = useCallback(async (amount: number, reason: string) => {
+  // ─── Pénalité manuelle ──────────────────────────────────
+  const applyPenalty = useCallback(async (amount: number, reason = "manual_penalty") => {
     if (!user) return;
     const { data: newXp } = await supabase.rpc("remove_xp", {
-      p_user_id: user.id, p_amount: amount, p_source: reason,
+      p_user_id: user.id,
+      p_amount:  amount,
+      p_source:  reason,
     });
-    if (newXp !== null && newXp !== undefined) setTotalXp(newXp);
+    if (newXp !== null && newXp !== undefined) {
+      setTotalXp(newXp);
+      localStorage.setItem(XP_STORAGE_KEY, String(newXp));
+    }
     await supabase.from("activity_feed").insert({
-      user_id: user.id,
-      action: `⚠️ Pénalité : ${reason} (-${amount} XP)`,
+      user_id:   user.id,
+      action:    `⚠️ Pénalité : ${reason} (-${amount} XP)`,
       xp_earned: -amount,
     });
   }, [user]);
 
-  // ─── Custom quests ────────────────────────────────────────
-  const addCustomQuest = useCallback(async (pillarId: string, label: string) => {
+  // ─── Custom quests ───────────────────────────────────────
+  const addCustomQuest = useCallback(async (pillarId: string, label: string, xp: number) => {
     if (!user || !label.trim()) return;
     const { data } = await supabase.from("custom_quests")
-      .insert({ user_id: user.id, pillar: pillarId, label: label.trim(), xp_value: DEFAULT_XP })
+      .insert({ user_id: user.id, title: label.trim(), category: pillarId, xp })
       .select().single();
-    if (data) setCustomQuests((prev) => [...prev, data as CustomQuest]);
+    if (data) setCustomQuests((prev) => [...prev, data as CustomQuestRow]);
   }, [user]);
 
   const deleteCustomQuest = useCallback(async (questId: string) => {
     if (!user) return;
     await supabase.from("custom_quests").delete().eq("id", questId).eq("user_id", user.id);
     setCustomQuests((prev) => prev.filter((q) => q.id !== questId));
+    setCompleted((prev) => {
+      const next = { ...prev };
+      delete next[questId];
+      return next;
+    });
   }, [user]);
 
-  const getCustomQuestsForPillar = useCallback(
-    (pillarId: string) => customQuests.filter((q) => q.pillar === pillarId),
+  const getCustomQuestsForPillar = useCallback((pillarId: string): Quest[] =>
+    customQuests
+      .filter((q) => q.category === pillarId)
+      .map((q) => ({ id: q.id, label: q.title, xp: q.xp })),
     [customQuests]
   );
 
   return {
-    completed, toggleQuest, totalXp, dailyXp,
-    pillarProgress, applyPenalty, confetti,
-    addCustomQuest, deleteCustomQuest, getCustomQuestsForPillar,
+    completed,
+    toggleQuest,
+    totalXp,
+    dailyXp,
+    pillarProgress,
+    applyPenalty,
+    confetti,
+    addCustomQuest,
+    deleteCustomQuest,
+    getCustomQuestsForPillar,
   };
 }
