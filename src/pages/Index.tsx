@@ -11,6 +11,7 @@ import { PenaltyButtons } from "@/components/PenaltyButtons";
 import { ConfettiOverlay } from "@/components/ConfettiOverlay";
 import { BottomNav } from "@/components/BottomNav";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { SacredClock } from "@/components/SacredClock";
 import { DualProgressBar } from "@/components/DualProgressBar";
 
 const Index = () => {
@@ -49,29 +50,8 @@ const Index = () => {
           </p>
         </motion.div>
 
-        {/* Sacred Clock — focal point */}
-        {nextPrayer && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="glass rounded-2xl p-5 text-center glow-border-gold"
-          >
-            <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Prochaine prière</p>
-            <span className="text-3xl block mb-1">{nextPrayer.icon}</span>
-            <p className="text-lg font-display font-bold text-foreground">{nextPrayer.label}</p>
-            <motion.p
-              animate={{ textShadow: ["0 0 10px rgba(245,158,11,0.4)", "0 0 20px rgba(245,158,11,0.7)", "0 0 10px rgba(245,158,11,0.4)"] }}
-              transition={{ repeat: Infinity, duration: 2 }}
-              className="font-mono font-black text-accent tracking-tight"
-              style={{ fontSize: "clamp(48px, 10vw, 64px)", fontVariantNumeric: "tabular-nums" }}
-            >
-              {nextPrayer.minutesUntil > 60
-                ? `${Math.floor(nextPrayer.minutesUntil / 60)}h${String(nextPrayer.minutesUntil % 60).padStart(2, "0")}`
-                : `${nextPrayer.minutesUntil} min`}
-            </motion.p>
-            <p className="text-xs text-muted-foreground">à {nextPrayer.time}</p>
-          </motion.div>
-        )}
+        {/* Sacred Clock — Le cœur battant du Sanctuaire */}
+        <SacredClock />
 
         <WisdomBanner />
 
