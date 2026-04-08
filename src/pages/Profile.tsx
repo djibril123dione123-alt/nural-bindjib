@@ -12,33 +12,48 @@ const Profile = () => {
   const { user, profile, loading, signOut } = useAuth();
   const [copied, setCopied] = useState(false);
 
-  // 🛑 FIX 1 : Skeleton pendant le chargement — plus d'écran noir
+  // ✅ FIX 1 : Skeleton pendant le chargement auth — jamais d'écran noir
   if (loading) return <SkeletonScreen />;
 
-  // 🛑 FIX 2 : Redirection sécurisée si non authentifié (normalement géré par ProtectedRoute)
-  if (!user || !profile) {
+  // ✅ FIX 2 : Guard null explicite APRÈS le loading
+  // ProtectedRoute garantit que user existe, mais profile peut prendre
+  // quelques ms supplémentaires à se charger depuis Supabase
+  if (!user) {
     return (
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <p className="text-muted-foreground text-sm">Chargement du profil...</p>
+        <p className="text-muted-foreground text-sm">Session expirée...</p>
         <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
+  // ✅ FIX 3 : Profile peut être null le temps que Supabase réponde
+  // On affiche un spinner intermédiaire plutôt que de crasher
+  if (!profile) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="text-4xl animate-pulse">🌙</div>
+        <p className="text-muted-foreground text-sm font-display">Chargement du Sanctuaire...</p>
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // ✅ FIX 4 : Toutes les valeurs null-safées avec opérateur ??
   const roleLabel = profile.role === "guide" ? "🧭 Le Guide" : "🛡️ La Gardienne";
   const roleDesc = profile.role === "guide" ? "Djibril" : "Binta";
 
-  // 🛑 FIX 3 : Calcul du niveau affiché sur le profil
-  const totalXp = profile.total_xp || 0;
-  const level = profile.level || calculateLevel(totalXp);
+  // ✅ FIX 5 : Calcul niveau null-safe
+  const totalXp = profile.total_xp ?? 0;
+  const level = profile.level ?? calculateLevel(totalXp);
   const rank = getRank(level);
-  const { title } = getTitle(level, profile.role as "guide" | "guardian");
-  const xpForNextLevel = Math.pow((level) * 10, 2); // inverse de floor(sqrt(xp/100))+1
+  const { title } = getTitle(level, (profile.role as "guide" | "guardian") ?? "guide");
+
+  // Calcul de progression vers le prochain niveau
+  const xpForNextLevel = Math.pow(level * 10, 2);
   const xpForCurrentLevel = Math.pow((level - 1) * 10, 2);
-  const xpProgress = Math.min(
-    100,
-    Math.round(((totalXp - xpForCurrentLevel) / Math.max(xpForNextLevel - xpForCurrentLevel, 1)) * 100)
-  );
+  const xpRange = Math.max(xpForNextLevel - xpForCurrentLevel, 1);
+  const xpProgress = Math.min(100, Math.round(((totalXp - xpForCurrentLevel) / xpRange) * 100));
 
   const inviteLink = typeof window !== "undefined" ? `${window.location.origin}/auth` : "";
 
@@ -55,7 +70,7 @@ const Profile = () => {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* 🛑 FIX 4 : Bouton retour universel (or, z-index max) */}
+      {/* ✅ FIX 6 : BackButton universel — toujours visible, z-index max */}
       <BackButton />
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 pt-16">
@@ -73,16 +88,16 @@ const Profile = () => {
           animate={{ opacity: 1, y: 0 }}
           className="glass rounded-2xl p-6 text-center space-y-4 glow-border-emerald"
         >
-          <div className="text-5xl">{profile.avatar_emoji || "🌙"}</div>
+          <div className="text-5xl">{profile.avatar_emoji ?? "🌙"}</div>
           <div>
             <h2 className="text-xl font-display font-bold text-foreground">
-              {profile.display_name || "Utilisateur"}
+              {profile.display_name ?? "Utilisateur"}
             </h2>
             <p className="text-sm text-primary font-semibold">{roleLabel}</p>
             <p className="text-xs text-muted-foreground">{roleDesc}</p>
           </div>
 
-          {/* 🛑 FIX 5 : Niveau + XP affiché sur le profil */}
+          {/* Niveau + XP */}
           <div className="bg-secondary/30 rounded-xl p-4 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-left">
@@ -99,7 +114,7 @@ const Profile = () => {
               </div>
             </div>
 
-            {/* Barre de progression vers le prochain niveau */}
+            {/* Barre de progression */}
             <div>
               <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
                 <span>Niveau {level}</span>
