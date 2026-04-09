@@ -32,33 +32,25 @@ export function useBaraka() {
   const awardXp = useCallback(async (amount: number, source: string) => {
     if (!user) return;
 
-    // Log to xp_history
-    await supabase.from("xp_history").insert({
-      user_id: user.id,
-      amount,
-      source,
+    const { data, error } = await supabase.rpc("add_xp", {
+      p_user_id: user.id,
+      p_amount: amount,
+      p_source: source,
     });
 
-    // Update profile total_xp (trigger auto-calculates level)
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("total_xp")
-      .eq("user_id", user.id)
-      .single();
+    if (error) {
+      toast.error("Erreur XP", { description: error.message });
+      return;
+    }
 
-    const newTotal = (prof?.total_xp || 0) + amount;
-
-    await supabase
-      .from("profiles")
-      .update({ total_xp: newTotal })
-      .eq("user_id", user.id);
-
-    // Log activity (clean source)
-    await supabase.from("activity_feed").insert({
-      user_id: user.id,
-      action: source,
-      xp_earned: amount,
-    });
+    // Be tolerant to different RPC return shapes.
+    const row = Array.isArray(data) ? data[0] : data;
+    const newTotal =
+      typeof row === "object" && row !== null && "new_xp" in row
+        ? (row as any).new_xp
+        : typeof data === "number"
+          ? data
+          : undefined;
 
     if (navigator.vibrate) navigator.vibrate(50);
     return newTotal;
@@ -67,27 +59,26 @@ export function useBaraka() {
   const applyPenalty = useCallback(async (amount: number, reason: string) => {
     if (!user) return;
 
-    await supabase.from("xp_history").insert({
-      user_id: user.id,
-      amount: -amount,
-      source: reason,
+    const { data, error } = await supabase.rpc("remove_xp", {
+      p_user_id: user.id,
+      p_amount: amount,
+      p_source: reason,
     });
 
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("total_xp")
-      .eq("user_id", user.id)
-      .single();
+    if (error) {
+      toast.error("Erreur XP", { description: error.message });
+      return;
+    }
 
-    const newTotal = Math.max(0, (prof?.total_xp || 0) - amount);
-
-    await supabase
-      .from("profiles")
-      .update({ total_xp: newTotal })
-      .eq("user_id", user.id);
+    const row = Array.isArray(data) ? data[0] : data;
+    const newTotal =
+      typeof row === "object" && row !== null && "new_xp" in row
+        ? (row as any).new_xp
+        : typeof data === "number"
+          ? data
+          : undefined;
 
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
-
     return newTotal;
   }, [user]);
 

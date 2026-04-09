@@ -410,6 +410,39 @@ export type Database = {
         }
         Relationships: []
       }
+      user_tasks: {
+        Row: {
+          completed: boolean | null
+          completed_at: string | null
+          date: string
+          id: string
+          pillar: string | null
+          task_id: string
+          user_id: string
+          xp_value: number | null
+        }
+        Insert: {
+          completed?: boolean | null
+          completed_at?: string | null
+          date?: string
+          id?: string
+          pillar?: string | null
+          task_id: string
+          user_id: string
+          xp_value?: number | null
+        }
+        Update: {
+          completed?: boolean | null
+          completed_at?: string | null
+          date?: string
+          id?: string
+          pillar?: string | null
+          task_id?: string
+          user_id?: string
+          xp_value?: number | null
+        }
+        Relationships: []
+      }
       xp_history: {
         Row: {
           amount: number
@@ -439,7 +472,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_xp: {
+        Args: { p_user_id: string; p_amount: number; p_source: string }
+        Returns: { leveled_up: boolean; new_level: number; new_xp: number }[]
+      }
       calculate_level: { Args: { xp: number }; Returns: number }
+      remove_xp: {
+        Args: { p_user_id: string; p_amount: number; p_source: string }
+        Returns: { new_xp: number }[]
+      }
     }
     Enums: {
       [_ in never]: never

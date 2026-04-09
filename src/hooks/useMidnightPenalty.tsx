@@ -61,12 +61,11 @@ async function runPenalty(userId: string) {
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const dateStr = yesterday.toISOString().slice(0, 10);
 
-  const [{ data: tasks }, { data: salat }, { data: prof }] = await Promise.all([
+  const [{ data: tasks }, { data: salat }] = await Promise.all([
     supabase.from("user_tasks").select("pillar")
       .eq("user_id", userId).eq("date", dateStr).eq("completed", true),
     supabase.from("salat_tracking").select("prayer_name")
       .eq("user_id", userId).eq("date", dateStr).eq("completed", true),
-    supabase.from("profiles").select("total_xp,level").eq("user_id", userId).single(),
   ]);
 
   const donePillars = new Set<string>();
@@ -77,7 +76,7 @@ async function runPenalty(userId: string) {
 
   if (emptyPillars.length === 0) {
     console.log("[MidnightPenalty] Journée parfaite — aucune pénalité !");
-    await archiveDay(userId, dateStr, prof?.total_xp ?? 0, donePillars, true);
+    await archiveDay(userId, dateStr, 0, donePillars, true);
     return;
   }
 
@@ -94,7 +93,12 @@ async function runPenalty(userId: string) {
     return;
   }
 
-  const newXp      = newXpData ?? Math.max(0, (prof?.total_xp ?? 0) - totalPenalty);
+  const row = Array.isArray(newXpData) ? newXpData[0] : newXpData;
+  const newXp = row?.new_xp;
+  if (typeof newXp !== "number") {
+    console.error("[MidnightPenalty] remove_xp: réponse invalide", newXpData);
+    return;
+  }
   const pillarList = emptyPillars.map((p) => PILLAR_LABELS[p]).join(", ");
 
   await supabase.from("activity_feed").insert({

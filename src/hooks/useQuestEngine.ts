@@ -1,9 +1,11 @@
-// useQuestEngine.ts — Schema-cache bypass + any temporaire
+// useQuestEngine.ts
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+
+type CustomQuest = { id: string; label: string; xp: number; category: string };
 
 export function useQuestEngine() {
   const { user, profile } = useAuth();
@@ -12,7 +14,7 @@ export function useQuestEngine() {
   const [dailyXp,    setDailyXp]    = useState(0);
   const [pillarProg, setPillarProg] = useState<Record<string, number>>({});
   const [confetti,   setConfetti]   = useState<"levelup" | "baraka" | null>(null);
-  const [customQ,    setCustomQ]    = useState<any[]>([]);
+  const [customQ,    setCustomQ]    = useState<CustomQuest[]>([]);
 
   const pending    = useRef<Set<string>>(new Set());
   const dailyXpRef = useRef(0);
@@ -25,25 +27,22 @@ export function useQuestEngine() {
   const loadState = useCallback(async () => {
     if (!user?.id) return;
 
-    // ── Bypass schema cache : cast explicite en (any) ──────
-    const db = supabase as any;
-
     const [tasksRes, profRes, dpRes, cqRes] = await Promise.all([
-      db.from("user_tasks")
+      supabase.from("user_tasks")
         .select("task_id, completed, xp_value, pillar")
         .eq("user_id", user.id)
         .eq("date", today),
-      db.from("profiles")
+      supabase.from("profiles")
         .select("total_xp")
         .eq("user_id", user.id)
         .single(),
-      db.from("daily_progress")
+      supabase.from("daily_progress")
         .select("daily_xp")
         .eq("user_id", user.id)
         .eq("date", today)
         .maybeSingle(),
-      db.from("custom_quests")
-        .select("id, label, pillar, xp_value")
+      supabase.from("custom_quests")
+        .select("id, title, category, xp")
         .eq("user_id", user.id),
     ]);
 
@@ -55,7 +54,7 @@ export function useQuestEngine() {
     const pillarDone:   Record<string, number>  = {};
     const pillarTotal:  Record<string, number>  = {};
 
-    for (const t of (tasksRes.data ?? []) as any[]) {
+    for (const t of (tasksRes.data ?? [])) {
       if (t.completed) completedMap[t.task_id] = true;
       if (t.pillar) {
         pillarTotal[t.pillar] = (pillarTotal[t.pillar] ?? 0) + 1;
@@ -72,7 +71,12 @@ export function useQuestEngine() {
     setTotalXp(profRes.data?.total_xp ?? 0);
     setDailyXp(dpRes.data?.daily_xp ?? 0);
     setPillarProg(progress);
-    setCustomQ(cqRes.data ?? []);
+    setCustomQ((cqRes.data ?? []).map((q) => ({
+      id: q.id,
+      label: q.title,
+      xp: q.xp,
+      category: q.category,
+    })));
   }, [user?.id, today]);
 
   useEffect(() => {
@@ -102,10 +106,8 @@ export function useQuestEngine() {
     const nowDone = !wasDone;
     setCompleted(prev => ({ ...prev, [questId]: nowDone }));
 
-    const db = supabase as any;
-
     try {
-      const { error: taskErr } = await db.from("user_tasks").upsert(
+      const { error: taskErr } = await supabase.from("user_tasks").upsert(
         {
           user_id:      user.id,
           task_id:      questId,
@@ -120,7 +122,7 @@ export function useQuestEngine() {
       if (taskErr) throw new Error(`user_tasks upsert: ${taskErr.message}`);
 
       if (nowDone) {
-        const { data: rpc, error: rpcErr } = await db.rpc("add_xp", {
+        const { data: rpc, error: rpcErr } = await supabase.rpc("add_xp", {
           p_user_id: user.id,
           p_amount:  xpValue,
           p_source:  `task_${questId}`,
@@ -134,18 +136,19 @@ export function useQuestEngine() {
           setTimeout(() => setConfetti(null), 4500);
         }
       } else {
-        const { data: newXp, error: rpcErr } = await db.rpc("remove_xp", {
+        const { data: newXp, error: rpcErr } = await supabase.rpc("remove_xp", {
           p_user_id: user.id,
           p_amount:  xpValue,
           p_source:  `unchecked_${questId}`,
         });
         if (rpcErr) throw new Error(`remove_xp: ${rpcErr.message}`);
-        if (newXp != null) setTotalXp(newXp);
+        const row = Array.isArray(newXp) ? newXp[0] : newXp;
+        if (row?.new_xp != null) setTotalXp(row.new_xp);
       }
 
       const prev    = dailyXpRef.current;
       const newDay  = nowDone ? prev + xpValue : Math.max(0, prev - xpValue);
-      await db.from("daily_progress").upsert(
+      await supabase.from("daily_progress").upsert(
         { user_id: user.id, date: today, daily_xp: newDay },
         { onConflict: "user_id,date" },
       );
@@ -154,11 +157,11 @@ export function useQuestEngine() {
       if (nowDone && newDay >= BARAKA_TARGET && prev < BARAKA_TARGET) {
         setConfetti("baraka");
         toast.success("✨ Objectif Baraka ! +50 XP !");
-        await db.rpc("add_xp", { p_user_id: user.id, p_amount: 50, p_source: "baraka_bonus" });
+        await supabase.rpc("add_xp", { p_user_id: user.id, p_amount: 50, p_source: "baraka_bonus" });
         setTimeout(() => setConfetti(null), 4500);
       }
 
-      db.from("activity_feed").insert({
+      supabase.from("activity_feed").insert({
         user_id:   user.id,
         action:    nowDone ? `validé [${pillar}] +${xpValue} XP` : `décoché [${pillar}]`,
         xp_earned: nowDone ? xpValue : -xpValue,
@@ -175,31 +178,32 @@ export function useQuestEngine() {
 
   const applyPenalty = useCallback(async (amount: number, reason: string) => {
     if (!user?.id) return;
-    const db = supabase as any;
-    const { data: newXp } = await db.rpc("remove_xp", {
+    const { data: newXp } = await supabase.rpc("remove_xp", {
       p_user_id: user.id, p_amount: amount, p_source: reason,
     });
-    if (newXp != null) setTotalXp(newXp);
+    const row = Array.isArray(newXp) ? newXp[0] : newXp;
+    if (row?.new_xp != null) setTotalXp(row.new_xp);
   }, [user?.id]);
 
-  const addCustomQuest = useCallback(async (pillarId: string, label: string) => {
-    if (!user?.id || !label.trim()) return;
-    const db = supabase as any;
-    const { data } = await db.from("custom_quests")
-      .insert({ user_id: user.id, pillar: pillarId, label: label.trim(), xp_value: 10 })
+  const addCustomQuest = useCallback(async (category: string, title: string, xp = 10) => {
+    if (!user?.id || !title.trim()) return;
+    const { data } = await supabase.from("custom_quests")
+      .insert({ user_id: user.id, category, title: title.trim(), xp })
       .select().single();
-    if (data) setCustomQ(prev => [...prev, data]);
+    if (data) setCustomQ((prev) => [
+      ...prev,
+      { id: data.id, label: data.title, xp: data.xp, category: data.category },
+    ]);
   }, [user?.id]);
 
   const deleteCustomQuest = useCallback(async (questId: string) => {
     if (!user?.id) return;
-    const db = supabase as any;
-    await db.from("custom_quests").delete().eq("id", questId).eq("user_id", user.id);
-    setCustomQ(prev => prev.filter((q: any) => q.id !== questId));
+    await supabase.from("custom_quests").delete().eq("id", questId).eq("user_id", user.id);
+    setCustomQ((prev) => prev.filter((q) => q.id !== questId));
   }, [user?.id]);
 
   const getCustomQuestsForPillar = useCallback(
-    (pillarId: string) => customQ.filter((q: any) => q.pillar === pillarId),
+    (pillarId: string) => customQ.filter((q) => q.category === pillarId),
     [customQ],
   );
 
