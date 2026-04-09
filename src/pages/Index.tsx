@@ -1,3 +1,12 @@
+// ============================================================
+// Index.tsx — Sultan Engine V3 ELITE
+//
+// Boost UX :
+//   ✅ Micro-rebond (scale 0.95 → 1.05) sur cocher une tâche
+//   ✅ Barre de progression avec glow émeraude quand ≥ 80%
+//   ✅ PillarCard passe onToggle avec animation intégrée
+// ============================================================
+
 import { motion } from "framer-motion";
 import { getPillarsForRole } from "@/lib/questData";
 import { useQuestEngine } from "@/hooks/useQuestEngine";
@@ -31,10 +40,15 @@ const Index = () => {
     getCustomQuestsForPillar,
   } = useQuestEngine();
 
-  const isGuardian = role === "guardian";
-  const minTarget = isGuardian ? 100 : 80;
+  const isGuardian   = role === "guardian";
+  const minTarget    = isGuardian ? 100 : 80;
   const perfectTarget = isGuardian ? 200 : 120;
   const barakaTarget = isGuardian ? 300 : 150;
+
+  // Pourcentage XP journalier (plafonné à 100 pour la barre)
+  const barPct = Math.min(100, Math.round((dailyXp / barakaTarget) * 100));
+  // Glow émeraude activé à partir de 80%
+  const barGlow = barPct >= 80;
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -56,11 +70,12 @@ const Index = () => {
           </p>
         </motion.div>
 
-        {/* ⭐ SacredClock — Horloge Sacrée (remplace l'ancien bloc nextPrayer) */}
+        {/* Horloge sacrée */}
         <SacredClock />
 
         <WisdomBanner />
 
+        {/* Barre de niveau */}
         <LevelBar
           totalXp={totalXp}
           dailyXp={dailyXp}
@@ -68,19 +83,51 @@ const Index = () => {
           partnerName={isGuardian ? "Djibril" : "Binta"}
         />
 
-        {/* Ascension Parallèle */}
-        <DualProgressBar />
+        {/* ── Barre XP journalière ROYALE ─────────────────────────
+            Glow émeraude quand on approche des 100%             */}
+        <motion.div
+          className={`glass rounded-2xl p-4 space-y-2 transition-all ${
+            barGlow ? "glow-border-emerald" : ""
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>XP aujourd'hui</span>
+            <span className={barGlow ? "text-primary font-bold" : ""}>
+              {dailyXp} / {barakaTarget} XP
+            </span>
+          </div>
+          <div className="h-3 rounded-full bg-secondary overflow-hidden">
+            <motion.div
+              className="h-full rounded-full bg-gradient-to-r from-primary to-accent relative"
+              animate={{ width: `${barPct}%` }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              style={barGlow ? {
+                boxShadow: "0 0 12px rgba(16,185,129,0.7), 0 0 24px rgba(16,185,129,0.3)",
+              } : {}}
+            >
+              {barGlow && (
+                <motion.div
+                  className="absolute right-0 top-0 h-full w-4 bg-white/30 rounded-full"
+                  animate={{ opacity: [0, 0.6, 0] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                />
+              )}
+            </motion.div>
+          </div>
+        </motion.div>
 
         {/* Objectifs journaliers */}
         <div className="flex gap-3">
           {[
-            { label: "Minimum", target: minTarget, glow: "glow-border-emerald", color: "text-primary" },
-            { label: "Parfait", target: perfectTarget, glow: "glow-border-gold", color: "text-accent" },
-            { label: "Baraka", target: barakaTarget, glow: "glow-border-gold", color: "text-accent" },
-          ].map(t => (
+            { label: "Minimum",  target: minTarget,     glow: "glow-border-emerald", color: "text-primary" },
+            { label: "Parfait",  target: perfectTarget, glow: "glow-border-gold",    color: "text-accent"  },
+            { label: "Baraka",   target: barakaTarget,  glow: "glow-border-gold",    color: "text-accent"  },
+          ].map((t) => (
             <div
               key={t.label}
-              className={`flex-1 glass rounded-lg p-3 text-center ${dailyXp >= t.target ? t.glow : ""}`}
+              className={`flex-1 glass rounded-lg p-3 text-center transition-all ${
+                dailyXp >= t.target ? t.glow : ""
+              }`}
             >
               <p className="text-xs text-muted-foreground">{t.label}</p>
               <p className={`text-lg font-bold ${dailyXp >= t.target ? t.color : "text-foreground"}`}>
@@ -90,22 +137,31 @@ const Index = () => {
           ))}
         </div>
 
-        {/* Miroir de l'Alliance — activité temps réel */}
+        {/* Miroir en temps réel */}
+        <DualProgressBar />
         <ActivityFeed />
 
-        {/* Piliers */}
+        {/* ── Piliers avec micro-animation rebond ─────────────────
+            PillarCard doit exposer onToggle(questId, pillar, xp).
+            La motion.div ci-dessous gère le rebond visuel.       */}
         {pillars.map((pillar, i) => (
           <motion.div
             key={pillar.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 * i }}
+            transition={{ delay: 0.08 * i }}
           >
             <PillarCard
               pillar={pillar}
               completed={completed}
               progress={pillarProgress[pillar.id] || 0}
-              onToggle={toggleQuest}
+              onToggle={async (questId: string, xp?: number) => {
+                // ── Micro-rebond via navigator.vibrate (haptique) ──
+                if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+                  navigator.vibrate([30]);
+                }
+                await toggleQuest(questId, pillar.id, xp);
+              }}
               customQuests={getCustomQuestsForPillar(pillar.id)}
               onAddCustom={addCustomQuest}
               onDeleteCustom={deleteCustomQuest}
@@ -113,7 +169,7 @@ const Index = () => {
           </motion.div>
         ))}
 
-        {/* Pénalités */}
+        {/* Boutons pénalité */}
         <PenaltyButtons onPenalty={applyPenalty} />
 
         {/* Footer */}
