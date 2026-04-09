@@ -1,8 +1,32 @@
-// On essaie de récupérer la clé sous les deux noms possibles pour être sûr
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from './types';
 
-// Vérification de sécurité pour ne pas avoir de page noire
+// Récupération de l'URL
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+
+// Récupération de la clé (on teste les deux noms possibles pour éviter tout conflit)
+const SUPABASE_PUBLISHABLE_KEY = 
+  import.meta.env.VITE_SUPABASE_ANON_KEY || 
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+// Log de sécurité en développement uniquement
 if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  console.error("ERREUR : Les clés Supabase ne sont pas détectées dans l'environnement.");
+  console.error(
+    "Erreur de configuration Supabase : Vérifiez que VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY sont bien définies dans Vercel."
+  );
 }
+
+export const supabase = createClient<Database>(
+  SUPABASE_URL || "", 
+  SUPABASE_PUBLISHABLE_KEY || "", 
+  {
+    db: {
+      schema: "public",
+    },
+    auth: {
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      persistSession: true,
+      autoRefreshToken: true,
+    }
+  }
+);
