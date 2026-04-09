@@ -7,24 +7,23 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
-    hmr: { overlay: false },
   },
   plugins: [
     react(),
-    mode === "development" && componentTagger(),
+    mode === 'development' &&
+    componentTagger(),
   ].filter(Boolean),
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
-    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime"],
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
   },
   build: {
     rollupOptions: {
       output: {
         manualChunks: {
-          "vendor-react":    ["react", "react-dom", "react-router-dom"],
-          "vendor-ui":       ["framer-motion", "sonner"],
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
           "vendor-supabase": ["@supabase/supabase-js"],
-          "vendor-charts":   ["recharts"],
         },
       },
     },
