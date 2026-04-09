@@ -1,4 +1,4 @@
-// Profile.tsx — Crash-proof V4
+// Profile.tsx — Crash-proof V5
 // Enveloppe globale try/catch + tous les calculs null-safés
 
 import { useState } from "react";
