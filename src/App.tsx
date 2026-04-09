@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AudioEngineProvider } from "@/hooks/useAudioEngine";
 import { AnimatePresence, motion } from "framer-motion";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
+// ✅ FIX BUILD : import depuis .tsx (contient du JSX)
 import { MidnightPenaltyGuard } from "@/hooks/useMidnightPenalty";
 
 import Index from "./pages/Index";
@@ -25,8 +26,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// ─── Route protégée — attend EXPLICITEMENT la fin du loading ─
-// Jamais de redirect pendant loading===true → fin de la boucle auth
+// ─── ProtectedRoute — jamais de redirect pendant loading ─────
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <SkeletonScreen />;
@@ -46,16 +46,16 @@ function AnimatedRoutes() {
         transition={{ duration: 0.18, ease: "easeInOut" }}
       >
         <Routes location={location}>
-          <Route path="/auth"      element={<Auth />} />
-          <Route path="/"          element={<ProtectedRoute><Index /></ProtectedRoute>} />
-          <Route path="/profile"   element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/dashboard" element={<Navigate to="/" replace />} />
-          <Route path="/tazkiyah"  element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
-          <Route path="/lab"       element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
-          <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
-          <Route path="/synergie"  element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
-          <Route path="/miroir"    element={<ProtectedRoute><MiroirAlliance /></ProtectedRoute>} />
-          <Route path="*"          element={<NotFound />} />
+          <Route path="/auth"       element={<Auth />} />
+          <Route path="/"           element={<ProtectedRoute><Index /></ProtectedRoute>} />
+          <Route path="/profile"    element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/dashboard"  element={<Navigate to="/" replace />} />
+          <Route path="/tazkiyah"   element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
+          <Route path="/lab"        element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
+          <Route path="/reflexion"  element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
+          <Route path="/synergie"   element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
+          <Route path="/miroir"     element={<ProtectedRoute><MiroirAlliance /></ProtectedRoute>} />
+          <Route path="*"           element={<NotFound />} />
         </Routes>
       </motion.div>
     </AnimatePresence>
