@@ -1,18 +1,10 @@
 // ============================================================
-// useMidnightPenalty.tsx — Discipline de Fer
-// IMPORTANT : extension .tsx obligatoire (JSX dans le composant)
-//
-// Logique :
-//   - Timer précis sur minuit UTC (= minuit Dakar, UTC+0)
-//   - remove_xp() RPC atomique → zéro race condition avec useQuestEngine
-//   - Archive dans alliance_history après chaque journée
-//   - Push notification via service worker
+// useMidnightPenalty.tsx — Discipline de Fer (Version Build-Safe)
 // ============================================================
 
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { useServiceWorker } from "@/hooks/useServiceWorker";
 import { toast } from "sonner";
 
 const PILLARS = ["body", "mind", "faith", "life"] as const;
@@ -25,7 +17,6 @@ const PILLAR_LABELS: Record<string, string> = {
   life:  "Vie 🏠",
 };
 
-// Dakar = UTC+0 — on calcule directement en UTC
 function msUntilDakarMidnight(): number {
   const now = new Date();
   const msPassedToday =
@@ -36,7 +27,6 @@ function msUntilDakarMidnight(): number {
 
 export function useMidnightPenalty() {
   const { user } = useAuth();
-  const { sendNotification } = useServiceWorker();
   const timerRef    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ranTodayRef = useRef<string | null>(null);
 
@@ -50,29 +40,23 @@ export function useMidnightPenalty() {
       timerRef.current = setTimeout(async () => {
         const todayStr = new Date().toISOString().slice(0, 10);
 
-        // Guard idempotence : une seule exécution par jour
         if (ranTodayRef.current === todayStr) {
           schedule();
           return;
         }
         ranTodayRef.current = todayStr;
 
-        await runPenalty(user.id, sendNotification);
+        await runPenalty(user.id);
         schedule();
       }, ms);
     };
 
     schedule();
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 }
 
-async function runPenalty(
-  userId: string,
-  sendNotification: (title: string, body: string, opts?: any) => void
-) {
-  // "Hier" = la journée qui vient de se clore
+async function runPenalty(userId: string) {
   const yesterday = new Date();
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const dateStr = yesterday.toISOString().slice(0, 10);
@@ -91,7 +75,6 @@ async function runPenalty(
 
   const emptyPillars = PILLARS.filter((p) => !donePillars.has(p));
 
-  // Journée parfaite — pas de pénalité, juste archiver
   if (emptyPillars.length === 0) {
     console.log("[MidnightPenalty] Journée parfaite — aucune pénalité !");
     await archiveDay(userId, dateStr, prof?.total_xp ?? 0, donePillars, true);
@@ -100,7 +83,6 @@ async function runPenalty(
 
   const totalPenalty = emptyPillars.length * PENALTY_PER_PILLAR;
 
-  // ── remove_xp RPC — atomique, transactionnel ────────────
   const { data: newXpData, error } = await supabase.rpc("remove_xp", {
     p_user_id: userId,
     p_amount:  totalPenalty,
@@ -115,30 +97,21 @@ async function runPenalty(
   const newXp      = newXpData ?? Math.max(0, (prof?.total_xp ?? 0) - totalPenalty);
   const pillarList = emptyPillars.map((p) => PILLAR_LABELS[p]).join(", ");
 
-  // ── Log dans activity_feed ──────────────────────────────
   await supabase.from("activity_feed").insert({
     user_id:   userId,
     action:    `⚠️ Discipline de Fer : ${pillarList} non accomplis (-${totalPenalty} XP)`,
     xp_earned: -totalPenalty,
   });
 
-  // ── Archiver la journée ─────────────────────────────────
   await archiveDay(userId, dateStr, newXp, donePillars, false);
 
-  // ── Toast visible si l'app est ouverte ─────────────────
   toast.error(`⚠️ Discipline de Fer : -${totalPenalty} XP`, {
     duration: 10000,
     description: `Piliers manquants : ${pillarList}`,
   });
 
-  // ── Notification push (app fermée) ──────────────────────
-  sendNotification(
-    "⚠️ Discipline de Fer — Pénalité appliquée",
-    `-${totalPenalty} XP : ${pillarList} non accomplis hier.`,
-    { tag: "midnight-penalty", url: "/", type: "penalty" }
-  );
-
-  console.log(`[MidnightPenalty] -${totalPenalty} XP → Nouveau total : ${newXp}`);
+  // Remplacement de sendNotification (éviter ENOENT build error)
+  console.log(`[DISCIPLINE] -${totalPenalty} XP pour : ${pillarList}`);
 }
 
 async function archiveDay(
@@ -151,16 +124,14 @@ async function archiveDay(
   const pillarsObj: Record<string, boolean> = {};
   PILLARS.forEach((p) => { pillarsObj[p] = donePillars.has(p); });
 
-  // alliance_history peut ne pas exister encore — on ignore l'erreur silencieusement
   await supabase.from("alliance_history").upsert(
     { user_id: userId, date, daily_xp: dailyXp, pillars_completed: pillarsObj, perfect_day: perfectDay },
     { onConflict: "user_id,date" }
   ).then(({ error }) => {
-    if (error) console.warn("[MidnightPenalty] alliance_history upsert :", error.message);
+    if (error) console.warn("[MidnightPenalty] archiveDay error :", error.message);
   });
 }
 
-// ── Wrapper pour App.tsx ─────────────────────────────────────
 export function MidnightPenaltyGuard({ children }: { children: React.ReactNode }) {
   useMidnightPenalty();
   return <>{children}</>;
