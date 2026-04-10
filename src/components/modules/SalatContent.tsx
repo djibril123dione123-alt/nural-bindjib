@@ -1,210 +1,53 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { useBaraka } from "@/hooks/useBaraka";
-import { useSanctuaryTime } from "@/hooks/useSanctuaryTime";
-import { useDuoPresence } from "@/hooks/useDuoPresence";
 import { CircularProgress } from "@/components/CircularProgress";
-import { GoldenParticles, useParticles } from "@/components/GoldenParticles";
+import { GoldenParticles } from "@/components/GoldenParticles";
 import { TasbihCounter } from "@/components/TasbihCounter";
-import { vibrate, vibrateSuccess, vibrateError } from "@/hooks/useHaptics";
 import { toast } from "sonner";
-
-const MOTIVATIONS = [
-  "« La prière est la clé du Paradis. » — Hadith",
-  "« Certes, la prière préserve de la turpitude. » — Coran 29:45",
-  "« La première chose dont on sera jugé est la Salat. » — Hadith",
-  "« Et cherchez secours dans la patience et la prière. » — Coran 2:45",
-  "« La prière en son temps est l'acte le plus aimé d'Allah. » — Hadith",
-];
-
-interface SalatEntry {
-  id: string;
-  prayer_name: string;
-  completed: boolean;
-  completed_at: string | null;
-  on_time: boolean;
-  custom_time: string | null;
-  date: string;
-}
+import { useSalat } from "@/hooks/useSalat";
 
 export default function SalatContent() {
-  const { user } = useAuth();
-  const { getXp, awardXp, applyPenalty } = useBaraka();
-  const { prayers, updateTime, nextPrayer, atmosphere, isLoading: isTimesLoading } = useSanctuaryTime();
-  const { partnerOnline, partnerName, streakCount, recordStreak } = useDuoPresence();
-  const [entries, setEntries] = useState<SalatEntry[]>([]);
-  const [editingTime, setEditingTime] = useState<string | null>(null);
-  const [draftTime, setDraftTime] = useState<Record<string, string>>({});
-  const [mosqueDone, setMosqueDone] = useState<Record<string, boolean>>({});
-  const [showTasbih, setShowTasbih] = useState<string | null>(null);
-  const [preQuranDone, setPreQuranDone] = useState<Record<string, boolean>>({});
-  const [loading, setLoading] = useState<Record<string, boolean>>({});
-  const { trigger, fire } = useParticles();
-  const today = new Date().toISOString().slice(0, 10);
-  const entriesRef = useRef<SalatEntry[]>([]);
+  const {
+    trigger,
+    entries,
+    editingTime,
+    draftTime,
+    mosqueDone,
+    showTasbih,
+    preQuranDone,
+    loading,
+    prayers,
+    nextPrayer,
+    atmosphere,
+    isTimesLoading,
+    partnerOnline,
+    partnerName,
+    streakCount,
+    getXp,
+    awardXp,
+    startEditTime,
+    cancelEditTime,
+    saveEditTime,
+    setDraftTime,
+    togglePrayer,
+    batchValidate,
+    setMosqueToggle,
+    setPreQuranDone,
+    setShowTasbih,
+    completedCount,
+    onTimeCount,
+  } = useSalat();
 
-  const motivation = useMemo(() => MOTIVATIONS[Math.floor(Math.random() * MOTIVATIONS.length)], []);
-
-  useEffect(() => { if (user) loadEntries(); }, [user]);
-
-  const loadEntries = async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from("salat_tracking")
-      .select("*")
-      .eq("user_id", user.id)
-      .eq("date", today);
-    if (error) { console.error("loadEntries error:", error); return; }
-    if (data) {
-      const typed = data as SalatEntry[];
-      setEntries(typed);
-      entriesRef.current = typed;
-    }
-  };
-
-  const getEntry = useCallback((name: string) => {
-    return entriesRef.current.find(e => e.prayer_name === name);
+  const motivation = useMemo(() => {
+    const list = [
+      "« La priere est la cle du Paradis. » — Hadith",
+      "« Certes, la priere preserve de la turpitude. » — Coran 29:45",
+      "« La premiere chose dont on sera juge est la Salat. » — Hadith",
+      "« Et cherchez secours dans la patience et la priere. » — Coran 2:45",
+      "« La priere en son temps est l'acte le plus aime d'Allah. » — Hadith",
+    ];
+    return list[Math.floor(Math.random() * list.length)];
   }, []);
-
-  const startEditTime = useCallback((prayerKey: string, currentTime: string) => {
-    setDraftTime((prev) => ({ ...prev, [prayerKey]: prev[prayerKey] ?? currentTime }));
-    setEditingTime(prayerKey);
-  }, []);
-
-  const cancelEditTime = useCallback((prayerKey: string) => {
-    setDraftTime((prev) => {
-      const next = { ...prev };
-      delete next[prayerKey];
-      return next;
-    });
-    setEditingTime(null);
-  }, []);
-
-  const saveEditTime = useCallback(async (prayerKey: string) => {
-    const next = draftTime[prayerKey];
-    if (!next) return;
-    await updateTime(prayerKey, next);
-    cancelEditTime(prayerKey);
-  }, [draftTime, updateTime, cancelEditTime]);
-
-  const togglePrayer = useCallback(async (prayerKey: string) => {
-    if (!user) return;
-    const prayer = prayers.find(p => p.key === prayerKey);
-    if (!prayer) return;
-
-    // Prevent double-click
-    if (loading[prayerKey]) return;
-    setLoading(prev => ({ ...prev, [prayerKey]: true }));
-
-    try {
-      // Temporal lock check
-      if (!prayer.isUnlocked && !prayer.isPast) {
-        vibrateError();
-        toast.error(`Le temps appartient à Allah. Patience, l'heure de ${prayer.label} (${prayer.time}) n'est pas encore venue. 🔒`);
-        return;
-      }
-
-      const existing = getEntry(prayerKey);
-      const isMosque = mosqueDone[prayerKey];
-
-      if (existing?.completed) {
-        // UNCHECK: Remove entry, reverse XP
-        await supabase.from("salat_tracking").delete().eq("id", existing.id);
-
-        // Calculate XP to remove
-        let xpToRemove = getXp(prayerKey);
-        if (isMosque) xpToRemove += getXp("mosque") + 5;
-        if (preQuranDone[prayerKey]) xpToRemove += getXp("quran_pre");
-
-        try {
-          await applyPenalty(xpToRemove, `Annulation ${prayer.label}`);
-          // Best-effort cleanup: ne pas bloquer l'état salat si activity_feed échoue.
-          await supabase.from("activity_feed")
-            .delete()
-            .eq("actor_id", user.id)
-            .ilike("action", `%${prayer.label}%`);
-        } catch (err) {
-          console.warn("Salat rollback side-effects failed:", err);
-        }
-
-        toast.info(`${prayer.label} décochée. -${xpToRemove} XP`);
-      } else {
-        // CHECK: Upsert entry (unique constraint handles dedup)
-        const { error } = await supabase.from("salat_tracking").upsert({
-          user_id: user.id,
-          date: today,
-          prayer_name: prayerKey,
-          completed: true,
-        }, { onConflict: "user_id,prayer_name,date" });
-
-        if (error) { console.error("Upsert salat error:", error); toast.error("Erreur de sauvegarde"); return; }
-
-        fire();
-        vibrateSuccess();
-
-        let totalXp = getXp(prayerKey);
-        if (isMosque) totalXp += getXp("mosque") + 5;
-        if (preQuranDone[prayerKey]) totalXp += getXp("quran_pre");
-
-        const source = isMosque
-          ? `Salat ${prayer.label} + Mosquée`
-          : `Salat ${prayer.label}`;
-
-        try {
-          await awardXp(totalXp, source);
-          await recordStreak(prayerKey);
-        } catch (err) {
-          console.warn("XP/streak side-effects failed:", err);
-        }
-
-        if (isMosque) {
-          toast.success(`${prayer.label} à la Mosquée ! Tasbih auto-validé. +${totalXp} XP 🕌`);
-          await awardXp(10, "Tasbih (Mosquée)");
-        } else {
-          toast.success(`${prayer.label} validée +${totalXp} XP`);
-          if (!existing?.completed) setShowTasbih(prayerKey);
-        }
-      }
-    } finally {
-      await loadEntries();
-      setLoading(prev => ({ ...prev, [prayerKey]: false }));
-    }
-  }, [user, prayers, mosqueDone, preQuranDone, getXp, awardXp, applyPenalty, recordStreak, fire, loading]);
-
-  // Batch validation (return from mosque)
-  const batchValidate = useCallback(async () => {
-    if (!user) return;
-    const missed = prayers.filter(p => p.isPast && !getEntry(p.key)?.completed);
-    if (missed.length === 0) {
-      toast.info("Aucune prière passée à valider.");
-      return;
-    }
-
-    let totalBatchXp = 0;
-    for (const p of missed) {
-      await supabase.from("salat_tracking").upsert({
-        user_id: user.id,
-        date: today,
-        prayer_name: p.key,
-        completed: true,
-      }, { onConflict: "user_id,prayer_name,date" });
-      const xp = getXp(p.key) + getXp("mosque") + 5;
-      totalBatchXp += xp;
-      await recordStreak(p.key);
-    }
-
-    await awardXp(totalBatchXp, `Batch Mosquée (${missed.length} prières)`);
-    await awardXp(10, "Tasbih (Mosquée batch)");
-    fire();
-    vibrateSuccess();
-    toast.success(`${missed.length} prières validées ! +${totalBatchXp} XP 🕌`);
-    await loadEntries();
-  }, [user, prayers, getXp, awardXp, recordStreak, fire]);
-
-  const completedCount = entries.filter(e => e.completed).length;
-  const onTimeCount = entries.filter(e => e.completed && e.on_time).length;
 
   // Pre-prayer Quran: show 15 min before next prayer
   const showPreQuran = nextPrayer && nextPrayer.minutesUntil <= 15 && nextPrayer.minutesUntil > 0;
@@ -280,8 +123,7 @@ export default function SalatContent() {
           animate={{ opacity: 1, y: 0 }}
           whileTap={{ scale: 0.95 }}
           onClick={() => {
-            setPreQuranDone(p => ({ ...p, [nextPrayer.key]: true }));
-            vibrate(30);
+            setPreQuranDone((p) => ({ ...p, [nextPrayer.key]: true }));
             awardXp(getXp("quran_pre"), `Lecture Coran avant ${nextPrayer.label}`);
             toast.success(`📖 Lecture Coran avant ${nextPrayer.label} ! +15 XP`);
           }}
@@ -404,7 +246,7 @@ export default function SalatContent() {
                 {/* Mosque toggle */}
                 <div className="flex gap-2 mt-2">
                   <button
-                    onClick={() => { setMosqueDone(m => ({ ...m, [prayer.key]: !m[prayer.key] })); vibrate(10); }}
+                    onClick={() => setMosqueToggle(prayer.key)}
                     className={`text-[9px] px-2 py-0.5 rounded-full border transition-all ${
                       isMosque ? "bg-accent/20 border-accent text-accent" : "border-border/50 text-muted-foreground"
                     }`}

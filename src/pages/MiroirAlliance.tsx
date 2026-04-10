@@ -1,28 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
-import { useDuoPresence } from "@/hooks/useDuoPresence";
 import { calculateLevel, getRank, getTitle } from "@/lib/questData";
 import { BottomNav } from "@/components/BottomNav";
 import { BackButton } from "@/components/BackButton";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
-import { toast } from "sonner";
-
-interface ProfileData {
-  id: string;
-  display_name: string;
-  role: string;
-  total_xp: number;
-  level: number;
-  avatar_emoji: string;
-}
-
-interface DailyXp {
-  userId: string;
-  xp: number;
-  pillars: Record<string, boolean>;
-}
+import { useMiroir, type ProfileData } from "@/hooks/useMiroir";
 
 // 🎆 Animation Level Up fullscreen
 function LevelUpOverlay({ level, onClose }: { level: number; onClose: () => void }) {
@@ -67,165 +49,21 @@ function LevelUpOverlay({ level, onClose }: { level: number; onClose: () => void
 }
 
 export default function MiroirAlliance({ embedInHub = false }: { embedInHub?: boolean }) {
-  const { user } = useAuth();
-  const { partnerOnline, partnerStatus, streakCount } = useDuoPresence();
-  const [profiles, setProfiles] = useState<ProfileData[]>([]);
-  const [dailyXp, setDailyXp] = useState<DailyXp[]>([]);
-  const [activity, setActivity] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [bothComplete, setBothComplete] = useState(false);
-  const [levelUpLevel, setLevelUpLevel] = useState<number | null>(null);
-  const prevLevels = useRef<Record<string, number>>({});
-
-  const today = new Date().toISOString().slice(0, 10);
-  const dailyTarget = 150;
-
-  useEffect(() => {
-    if (!user) return;
-    loadAll();
-
-    const channel = supabase
-      .channel("miroir-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload: any) => {
-        // 🛑 FIX : Détecter Level Up en temps réel
-        const updated = payload.new as ProfileData;
-        if (updated?.id === user.id) {
-          const newLevel = updated.level || calculateLevel(updated.total_xp || 0);
-          const oldLevel = prevLevels.current[updated.id] || 0;
-          if (newLevel > oldLevel && oldLevel > 0) {
-            setLevelUpLevel(newLevel);
-          }
-          prevLevels.current[updated.id] = newLevel;
-        }
-        loadAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "user_tasks" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "salat_tracking" }, () => loadAll())
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "activity_feed" }, () => loadAll())
-      .on("postgres_changes", { event: "*", schema: "public", table: "daily_progress" }, () => loadAll())
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [user]);
-
-  const loadAll = async () => {
-    if (!user) return;
-
-    const { data: profs } = await supabase.from("profiles").select("*");
-    if (profs) {
-      setProfiles(profs as ProfileData[]);
-      // Initialiser les niveaux précédents au premier chargement
-      profs.forEach((p: any) => {
-        if (!prevLevels.current[p.id]) {
-          prevLevels.current[p.id] = p.level || calculateLevel(p.total_xp || 0);
-        }
-      });
-    }
-
-    // 🛑 FIX : Charger les tâches user_tasks pour TOUS les piliers
-    const { data: tasksData } = await supabase
-      .from("user_tasks")
-      .select("user_id, pillar, completed")
-      .eq("date", today)
-      .eq("completed", true);
-
-    // Salat pour le pilier FAITH
-    const { data: salatData } = await supabase
-      .from("salat_tracking")
-      .select("user_id, prayer_name, completed")
-      .eq("date", today)
-      .eq("completed", true);
-
-    if (profs) {
-      const dailies: DailyXp[] = profs.map((p: any) => {
-        const userTasks = (tasksData || []).filter((t: any) => t.user_id === p.id);
-        const userSalat = (salatData || []).filter((s: any) => s.user_id === p.id);
-
-        // 🛑 FIX : Calculer chaque pilier correctement
-        const bodyTasks = userTasks.filter((t: any) => t.pillar === "body");
-        const mindTasks = userTasks.filter((t: any) => t.pillar === "mind");
-        const lifeTasks = userTasks.filter((t: any) => t.pillar === "life");
-
-        return {
-          userId: p.id,
-          xp: userTasks.length * 10 + userSalat.length * 10,
-          pillars: {
-            body: bodyTasks.length >= 3,   // 3+ tâches BODY
-            mind: mindTasks.length >= 2,   // 2+ tâches MIND
-            faith: userSalat.length >= 5,  // 5 prières
-            life: lifeTasks.length >= 2,   // 2+ tâches LIFE
-          },
-        };
-      });
-      setDailyXp(dailies);
-
-      const allDone = profs.length >= 2 && profs.every((p: any) => {
-        const count = (salatData || []).filter((s: any) => s.user_id === p.id).length;
-        return count >= 5;
-      });
-      setBothComplete(allDone);
-    }
-
-    // daily_progress pour XP précise
-    const { data: progData } = await supabase
-      .from("daily_progress")
-      .select("user_id, daily_xp")
-      .eq("date", today);
-
-    if (progData) {
-      setDailyXp(prev => prev.map(d => {
-        const prog = (progData as any[]).find(p => p.user_id === d.userId);
-        return prog ? { ...d, xp: prog.daily_xp || d.xp } : d;
-      }));
-    }
-
-    // Activity feed
-    const { data: actData } = await supabase
-      .from("activity_feed")
-      .select("*")
-      .gte("created_at", `${today}T00:00:00`)
-      .order("created_at", { ascending: false })
-      .limit(30);
-
-    if (actData) {
-      const seen = new Set<string>();
-      const deduped = actData.filter((a: any) => {
-        const key = `${a.actor_id}-${a.action}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      setActivity(deduped.slice(0, 12));
-    }
-
-    setLoading(false);
-  };
-
-  // 🛑 FIX : Bouton d'encouragement instantané
-  const sendEncouragement = async () => {
-    if (!user) return;
-    const me = profiles.find(p => p.id === user.id);
-    const partner = profiles.find(p => p.id !== user.id);
-    if (!partner || !me) return;
-
-    const message = me.role === "guide"
-      ? `Djibril pense à toi et t'encourage pour ton Master ! 🤍`
-      : `Binta pense à toi et t'encourage ! 🤍`;
-
-    await supabase.from("activity_feed").insert({
-      actor_id: user.id,
-      user_id: user.id,
-      event_type: "social",
-      event_label: "Message",
-      action: `💌 ${message}`,
-      xp_earned: 0,
-    });
-
-    toast.success("Message d'encouragement envoyé ✨");
-  };
-
-  const me = profiles.find(p => p.id === user?.id);
-  const partner = profiles.find(p => p.id !== user?.id);
+  const {
+    loading,
+    dailyXp,
+    activity,
+    bothComplete,
+    levelUpLevel,
+    setLevelUpLevel,
+    me,
+    partner,
+    sendEncouragement,
+    partnerOnline,
+    partnerStatus,
+    streakCount,
+    dailyTarget,
+  } = useMiroir();
 
   const timeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -383,7 +221,7 @@ export default function MiroirAlliance({ embedInHub = false }: { embedInHub?: bo
           <div className="glass rounded-2xl p-4 space-y-3 border border-accent/10">
             <h3 className="text-xs font-display font-bold uppercase tracking-wider text-accent">🪞 Activité du jour</h3>
             {activity.map((item: any) => {
-              const isMe = item.actor_id === user?.id;
+              const isMe = item.actor_id === me?.id;
               const prof = isMe ? me : partner;
               return (
                 <motion.div key={item.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}

@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { ACTIVITY_EVENT_DEFAULT, ACTIVITY_LABEL_DEFAULT } from "@/lib/activityFeedDefaults";
 import { applyXpDelta } from "@/lib/xpRpc";
+import { deleteActivityEntry, removeTaskActivity, safeWrite } from "@/services/database.service";
 
 type CustomQuest = { id: string; label: string; xp: number; category: string };
 
@@ -115,10 +116,10 @@ export function useQuestEngine() {
         pillar,
         completed_at: nowDone ? new Date().toISOString() : null,
       };
-      const { error: taskErr } = await supabase
-        .from("user_tasks")
-        .upsert(taskRow, { onConflict: "user_id,task_id,date" });
-      if (taskErr) throw new Error(`user_tasks upsert: ${taskErr.message}`);
+      await safeWrite(
+        supabase.from("user_tasks").upsert(taskRow, { onConflict: "user_id,task_id,date" }),
+        "user_tasks.upsert",
+      );
 
       if (nowDone) {
         const row = await applyXpDelta(user.id, xpValue, `task_${questId}`);
@@ -148,16 +149,23 @@ export function useQuestEngine() {
         setTimeout(() => setConfetti(null), 4500);
       }
 
-      const feedRow: TablesInsert<"activity_feed"> = {
-        actor_id: user.id,
-        user_id: user.id,
-        event_type: ACTIVITY_EVENT_DEFAULT,
-        event_label: ACTIVITY_LABEL_DEFAULT,
-        action: nowDone ? `validé [${pillar}] +${xpValue} XP` : `décoché [${pillar}]`,
-        xp_earned: nowDone ? xpValue : -xpValue,
-      };
-      const { error: feedErr } = await supabase.from("activity_feed").insert(feedRow);
-      if (feedErr) console.warn("[activity_feed]", feedErr.message);
+      if (nowDone) {
+        // IMPORTANT: event_type doit être 'task' pour permettre la suppression fiable au décochage.
+        const feedRow: TablesInsert<"activity_feed"> = {
+          actor_id: user.id,
+          user_id: user.id,
+          event_type: "task",
+          event_label: ACTIVITY_LABEL_DEFAULT,
+          action: `validé [${pillar}] (${questId}) +${xpValue} XP`,
+          xp_earned: xpValue,
+        };
+        await safeWrite(supabase.from("activity_feed").insert(feedRow), "activity_feed.insert_task");
+      } else {
+        // Politique produit: pas de ligne "décoché" dans le Miroir, on retire la victoire.
+        await deleteActivityEntry({ actor_id: user.id, pillar, date: today });
+        // fallback plus permissif si le format de l'action a changé
+        await removeTaskActivity(user.id, pillar, questId);
+      }
 
     } catch (err: any) {
       setCompleted(prev => ({ ...prev, [questId]: wasDone }));

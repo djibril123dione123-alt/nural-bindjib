@@ -33,22 +33,44 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  const isStaticAsset = ["style", "script", "image", "font"].includes(event.request.destination);
   if (url.pathname.startsWith("/api") || url.hostname.includes("supabase")) return;
 
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request)
+          .then((response) => {
+            if (!response.ok || response.type !== "basic") return response;
+            const forCache = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((c) => c.put(event.request, forCache).catch(() => {}))
+            );
+            return response;
+          })
+          .catch(() => new Response("", { status: 503 }));
+      })
+    );
+    return;
+  }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (!response.ok || response.type !== "basic") return response;
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok && response.type === "basic") {
           const forCache = response.clone();
           event.waitUntil(
             caches.open(CACHE_NAME).then((c) => c.put(event.request, forCache).catch(() => {}))
           );
-          return response;
-        })
-        .catch(() => (event.request.mode === "navigate" ? caches.match("/index.html") : new Response("", { status: 503 })));
-    })
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then((cached) =>
+          cached || (event.request.mode === "navigate" ? caches.match("/index.html") : new Response("", { status: 503 }))
+        )
+      )
   );
 });
 

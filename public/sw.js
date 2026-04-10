@@ -46,6 +46,7 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
   const url = new URL(event.request.url);
+  const isStaticAsset = ["style", "script", "image", "font"].includes(event.request.destination);
 
   // Ne pas intercepter Supabase ni audio (everyayah.com)
   if (
@@ -77,23 +78,45 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Assets statiques — cache-first
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request)
+          .then((response) => {
+            if (!response.ok || response.type === "opaque") return response;
+            const forCache = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, forCache).catch(() => {}))
+            );
+            return response;
+          })
+          .catch(() => new Response("", { status: 503 }));
+      })
+    );
+    return;
+  }
+
+  // Navigation — network-first, fallback cache
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request)
-        .then((response) => {
-          if (!response.ok || response.type === "opaque") return response;
+    fetch(event.request)
+      .then((response) => {
+        if (response.ok && response.type !== "opaque") {
           const forCache = response.clone();
           event.waitUntil(
-            caches.open(CACHE_NAME).then((cache) =>
-              cache.put(event.request, forCache).catch(() => {})
-            )
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, forCache).catch(() => {}))
           );
-          return response;
+        }
+        return response;
+      })
+      .catch(() =>
+        caches.match(event.request).then((cached) => {
+          if (cached) return cached;
+          return event.request.mode === "navigate"
+            ? caches.match("/index.html")
+            : new Response("", { status: 503 });
         })
-        .then((r) => r || (event.request.mode === "navigate" ? caches.match("/index.html") : null))
-        .catch(() => (event.request.mode === "navigate" ? caches.match("/index.html") : new Response("", { status: 503 })));
-    })
+      )
   );
 });
 

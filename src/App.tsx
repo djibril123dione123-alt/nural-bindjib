@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -14,11 +15,12 @@ import { NotificationOnboarding } from "@/components/NotificationOnboarding";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
-import TazkiyahHub from "./pages/TazkiyahHub";
-import FocusHub from "./pages/FocusHub";
-import ReflexionHub from "./pages/ReflexionHub";
-import SynergieHub from "./pages/SynergieHub";
 import NotFound from "./pages/NotFound";
+
+const TazkiyahHub = lazy(() => import("./pages/TazkiyahHub"));
+const FocusHub = lazy(() => import("./pages/FocusHub"));
+const ReflexionHub = lazy(() => import("./pages/ReflexionHub"));
+const SynergieHub = lazy(() => import("./pages/SynergieHub"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,10 +58,10 @@ function AnimatedRoutes() {
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/dashboard" element={<Navigate to="/" replace />} />
 
-          <Route path="/tazkiyah" element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
-          <Route path="/focus" element={<ProtectedRoute><FocusHub /></ProtectedRoute>} />
-          <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
-          <Route path="/synergie" element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
+          <Route path="/tazkiyah" element={<ProtectedRoute><Suspense fallback={<SkeletonScreen />}><TazkiyahHub /></Suspense></ProtectedRoute>} />
+          <Route path="/focus" element={<ProtectedRoute><Suspense fallback={<SkeletonScreen />}><FocusHub /></Suspense></ProtectedRoute>} />
+          <Route path="/reflexion" element={<ProtectedRoute><Suspense fallback={<SkeletonScreen />}><ReflexionHub /></Suspense></ProtectedRoute>} />
+          <Route path="/synergie" element={<ProtectedRoute><Suspense fallback={<SkeletonScreen />}><SynergieHub /></Suspense></ProtectedRoute>} />
 
           {/* Anciennes URLs → 4 piliers */}
           <Route path="/lab" element={<Navigate to="/focus" replace />} />

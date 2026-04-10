@@ -13,17 +13,17 @@ WHERE user_id IS NULL AND updated_by IS NOT NULL;
 -- Dedup par (user_id, prayer_name) en gardant la ligne la plus récente.
 WITH ranked AS (
   SELECT
-    id,
+    ctid,
     ROW_NUMBER() OVER (
       PARTITION BY user_id, prayer_name
-      ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+      ORDER BY updated_at DESC NULLS LAST, ctid DESC
     ) AS rn
   FROM public.sanctuary_settings
   WHERE user_id IS NOT NULL
 )
 DELETE FROM public.sanctuary_settings s
 USING ranked r
-WHERE s.id = r.id AND r.rn > 1;
+WHERE s.ctid = r.ctid AND r.rn > 1;
 
 -- Retire l'index global qui forçait une seule ligne par prière pour tous.
 DROP INDEX IF EXISTS public.sanctuary_settings_prayer_name_uidx;
