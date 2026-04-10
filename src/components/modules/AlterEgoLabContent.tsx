@@ -53,6 +53,7 @@ export default function AlterEgoLabContent() {
         actor_id: user.id,
         user_id: user.id,
         event_type: "mission",
+        event_label: "Mission",
         action: `a terminé la mission "${mission.title}"`,
         xp_earned: mission.xp,
       });

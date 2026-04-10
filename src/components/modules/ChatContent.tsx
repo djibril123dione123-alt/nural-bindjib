@@ -2,14 +2,25 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useDuoPresence } from "@/hooks/useDuoPresence";
 import { toast } from "sonner";
 
 interface Message {
-  id: string; sender_id: string; content: string; created_at: string;
+  id: string;
+  sender_id: string;
+  /** Schéma distant : souvent `body` (NOT NULL) ; `content` possible selon migration. */
+  body?: string | null;
+  content?: string | null;
+  created_at: string;
+}
+
+function messageText(m: Message) {
+  return (m.body ?? m.content ?? "").trim();
 }
 
 export default function ChatContent() {
   const { user } = useAuth();
+  const { partnerUserId } = useDuoPresence();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -30,9 +41,18 @@ export default function ChatContent() {
 
   const send = async () => {
     if (!input.trim() || !user) return;
+    if (!partnerUserId) {
+      toast.error("Partenaire introuvable", {
+        description: "Liez d’abord votre alliance (deux comptes dans profiles) pour envoyer un message.",
+      });
+      return;
+    }
+    const text = input.trim();
+    // Schéma distant : `body` NOT NULL est le plus ancien ; `content` peut être absent avant migration.
     const { error } = await supabase.from("duo_messages").insert({
       sender_id: user.id,
-      content: input.trim(),
+      receiver_id: partnerUserId,
+      body: text,
     });
     if (error) {
       console.warn("[duo_messages]", error.message);
@@ -57,7 +77,7 @@ export default function ChatContent() {
           <motion.div key={msg.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             className={`flex ${isMe(msg.sender_id) ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${isMe(msg.sender_id) ? "bg-primary/20 border border-primary/30 text-foreground" : "bg-accent/10 border border-accent/20 text-foreground"}`}>
-              {msg.content}
+              {messageText(msg)}
             </div>
           </motion.div>
         ))}
@@ -67,7 +87,14 @@ export default function ChatContent() {
         <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === "Enter" && send()}
           placeholder="Doua, encouragement..."
           className="flex-1 bg-secondary/50 border border-border rounded-xl px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
-        <motion.button whileTap={{ scale: 0.9 }} onClick={send} className="px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-sm">↑</motion.button>
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={send}
+          disabled={!partnerUserId}
+          className="px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-sm disabled:opacity-40"
+        >
+          ↑
+        </motion.button>
       </div>
     </div>
   );

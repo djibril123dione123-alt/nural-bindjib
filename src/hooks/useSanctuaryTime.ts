@@ -28,6 +28,63 @@ export interface PrayerTimeEntry {
   isPast: boolean;
 }
 
+async function trySavePrayerTime(prayerKey: string, newTime: string, userId: string) {
+  const stamp = new Date().toISOString();
+
+  const attempts = [
+    async () =>
+      supabase
+        .from("sanctuary_settings")
+        .upsert(
+          {
+            prayer_name: prayerKey,
+            custom_time: newTime,
+            updated_by: userId,
+            updated_at: stamp,
+          },
+          { onConflict: "prayer_name" },
+        ),
+    async () =>
+      supabase
+        .from("sanctuary_settings")
+        .upsert(
+          {
+            prayer_name: prayerKey,
+            custom_time: newTime,
+            updated_by: "00000000-0000-0000-0000-000000000000",
+            updated_at: stamp,
+          },
+          { onConflict: "prayer_name" },
+        ),
+    async () =>
+      supabase
+        .from("sanctuary_settings")
+        .update({
+          custom_time: newTime,
+          updated_by: userId,
+          updated_at: stamp,
+        })
+        .eq("prayer_name", prayerKey),
+    async () =>
+      supabase
+        .from("sanctuary_settings")
+        .insert({
+          prayer_name: prayerKey,
+          custom_time: newTime,
+          updated_by: userId,
+          updated_at: stamp,
+        }),
+  ];
+
+  let lastError: any = null;
+  for (const attempt of attempts) {
+    const { error } = await attempt();
+    if (!error) return null;
+    lastError = error;
+  }
+  return lastError;
+}
+
 export function useSanctuaryTime() {
   const { user } = useAuth();
   const [times, setTimes] = useState<Record<string, string>>({});
@@ -70,33 +127,13 @@ export function useSanctuaryTime() {
     // Optimistic update for instant UI persistence.
     setTimes((prev) => ({ ...prev, [prayerKey]: newTime }));
 
-    // Prefer UPDATE (avoids some PostgREST on_conflict 400 edge cases),
-    // fallback to INSERT if the row doesn't exist yet.
-    const { data: updatedRows, error: updateErr } = await supabase
-      .from("sanctuary_settings")
-      .update({
-        custom_time: newTime,
-        updated_by: user.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("prayer_name", prayerKey)
-      // Colonne toujours présente (évite PGRST 400 si `id` absent ou non exposé)
-      .select("prayer_name");
-
-    const needsInsert = !updateErr && Array.isArray(updatedRows) && updatedRows.length === 0;
-    const { error: insertErr } = needsInsert
-      ? await supabase.from("sanctuary_settings").insert({
-          prayer_name: prayerKey,
-          custom_time: newTime,
-          updated_by: user.id,
-          updated_at: new Date().toISOString(),
-        })
-      : { error: null as any };
-
-    if (updateErr || insertErr) {
+    const error = await trySavePrayerTime(prayerKey, newTime, user.id);
+    if (error) {
       // Rollback and notify.
       await loadTimes();
-      toast.error("Erreur de connexion", { description: "Impossible d'enregistrer l'heure." });
+      toast.error("Erreur de connexion", {
+        description: error.message || "Impossible d'enregistrer l'heure.",
+      });
       return;
     }
     toast.success("Heure enregistrée");

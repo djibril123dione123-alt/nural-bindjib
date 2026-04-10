@@ -62,25 +62,37 @@ self.addEventListener("fetch", (event) => {
         const cached = await cache.match(event.request);
         if (cached) return cached;
         const fresh = await fetch(event.request);
-        cache.put(event.request, fresh.clone());
+        if (fresh.ok && fresh.type !== "opaque") {
+          const copy = fresh.clone();
+          try {
+            await cache.put(event.request, copy);
+          } catch {
+            /* ignore cache errors */
+          }
+        }
         return fresh;
       }).catch(() => new Response("", { status: 503 }))
     );
     return;
   }
 
-  // Assets statiques — cache-first + revalidate en arrière-plan
+  // Assets statiques — cache-first
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request).then((response) => {
-        if (response.ok && response.type !== "opaque") {
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
-        }
-        return response;
-      }).catch(() => null);
-
-      // Retourner le cache immédiatement si disponible, sinon attendre le réseau
-      return cached || fetchPromise.then((r) => r || caches.match("/index.html"));
+      if (cached) return cached;
+      return fetch(event.request)
+        .then((response) => {
+          if (!response.ok || response.type === "opaque") return response;
+          const forCache = response.clone();
+          event.waitUntil(
+            caches.open(CACHE_NAME).then((cache) =>
+              cache.put(event.request, forCache).catch(() => {})
+            )
+          );
+          return response;
+        })
+        .then((r) => r || caches.match("/index.html"))
+        .catch(() => caches.match("/index.html"));
     })
   );
 });

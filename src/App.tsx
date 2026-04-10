@@ -8,7 +8,6 @@ import { DuoPresenceProvider } from "@/hooks/useDuoPresence";
 import { AudioEngineProvider } from "@/hooks/useAudioEngine";
 import { AnimatePresence, motion } from "framer-motion";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
-// ✅ FIX BUILD : import depuis .tsx (contient du JSX)
 import { MidnightPenaltyGuard } from "@/hooks/useMidnightPenalty";
 import { NotificationOnboarding } from "@/components/NotificationOnboarding";
 
@@ -16,18 +15,9 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Profile from "./pages/Profile";
 import TazkiyahHub from "./pages/TazkiyahHub";
-import LabHub from "./pages/LabHub";
+import FocusHub from "./pages/FocusHub";
 import ReflexionHub from "./pages/ReflexionHub";
 import SynergieHub from "./pages/SynergieHub";
-import MiroirAlliance from "./pages/MiroirAlliance";
-import DuoChat from "./pages/DuoChat";
-import DeepWork from "./pages/DeepWork";
-import JournalSakinah from "./pages/JournalSakinah";
-import HifzTracker from "./pages/HifzTracker";
-import SalatTracker from "./pages/SalatTracker";
-import AlterEgoLab from "./pages/AlterEgoLab";
-import BilanSoir from "./pages/BilanSoir";
-import Tazkiyah from "./pages/Tazkiyah";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -36,15 +26,13 @@ const queryClient = new QueryClient({
   },
 });
 
-// ─── ProtectedRoute — jamais de redirect pendant loading ─────
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <SkeletonScreen />;
-  if (!user)   return <Navigate to="/auth" replace />;
+  if (!user) return <Navigate to="/auth" replace />;
   return <>{children}</>;
 }
 
-/** Onboarding notifs : uniquement utilisateur connecté (évite flash sur /auth). */
 function NotificationOnboardingGate() {
   const { user, loading } = useAuth();
   if (loading || !user) return null;
@@ -63,24 +51,29 @@ function AnimatedRoutes() {
         transition={{ duration: 0.18, ease: "easeInOut" }}
       >
         <Routes location={location}>
-          <Route path="/auth"       element={<Auth />} />
-          <Route path="/"           element={<ProtectedRoute><Index /></ProtectedRoute>} />
-          <Route path="/profile"    element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-          <Route path="/dashboard"  element={<Navigate to="/" replace />} />
-          <Route path="/tazkiyah"   element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
-          <Route path="/tazkiyah/challenges" element={<ProtectedRoute><Tazkiyah /></ProtectedRoute>} />
-          <Route path="/lab"        element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
-          <Route path="/lab/alter-ego" element={<ProtectedRoute><AlterEgoLab /></ProtectedRoute>} />
-          <Route path="/reflexion"  element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
-          <Route path="/synergie"   element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
-          <Route path="/miroir"     element={<ProtectedRoute><MiroirAlliance /></ProtectedRoute>} />
-          <Route path="/salat"      element={<ProtectedRoute><SalatTracker /></ProtectedRoute>} />
-          <Route path="/hifz"       element={<ProtectedRoute><HifzTracker /></ProtectedRoute>} />
-          <Route path="/journal"    element={<ProtectedRoute><JournalSakinah /></ProtectedRoute>} />
-          <Route path="/deepwork"   element={<ProtectedRoute><DeepWork /></ProtectedRoute>} />
-          <Route path="/chat"       element={<ProtectedRoute><DuoChat /></ProtectedRoute>} />
-          <Route path="/bilan"      element={<ProtectedRoute><BilanSoir /></ProtectedRoute>} />
-          <Route path="*"           element={<NotFound />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+
+          <Route path="/tazkiyah" element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
+          <Route path="/focus" element={<ProtectedRoute><FocusHub /></ProtectedRoute>} />
+          <Route path="/reflexion" element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
+          <Route path="/synergie" element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
+
+          {/* Anciennes URLs → 4 piliers */}
+          <Route path="/lab" element={<Navigate to="/focus" replace />} />
+          <Route path="/lab/alter-ego" element={<Navigate to="/focus?tab=missions" replace />} />
+          <Route path="/deepwork" element={<Navigate to="/focus?tab=deepwork" replace />} />
+          <Route path="/salat" element={<Navigate to="/tazkiyah?tab=salat" replace />} />
+          <Route path="/hifz" element={<Navigate to="/tazkiyah?tab=hifz" replace />} />
+          <Route path="/tazkiyah/challenges" element={<Navigate to="/tazkiyah?tab=defis" replace />} />
+          <Route path="/journal" element={<Navigate to="/reflexion?tab=journal" replace />} />
+          <Route path="/bilan" element={<Navigate to="/reflexion?tab=bilan" replace />} />
+          <Route path="/chat" element={<Navigate to="/synergie?tab=chat" replace />} />
+          <Route path="/miroir" element={<Navigate to="/synergie?tab=miroir" replace />} />
+
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </motion.div>
     </AnimatePresence>

@@ -20,6 +20,36 @@ interface JournalEntry {
   id: string; content: string; mood_score: number; visibility: string; prompt_used: string | null; created_at: string;
 }
 
+async function saveJournalEntryCompat(payload: {
+  user_id: string;
+  content: string;
+  mood_score: number;
+  visibility: "private" | "shared";
+  prompt_used: string | null;
+}) {
+  const attempts = [
+    () => supabase.from("journal_entries").insert(payload),
+    () => supabase.from("journal_entries").insert({
+      user_id: payload.user_id,
+      content: payload.content,
+      mood_score: payload.mood_score,
+      visibility: payload.visibility,
+    }),
+    () => supabase.from("journal_entries").insert({
+      user_id: payload.user_id,
+      content: payload.content,
+    }),
+  ];
+
+  let lastError: any = null;
+  for (const attempt of attempts) {
+    const { error } = await attempt();
+    if (!error) return null;
+    lastError = error;
+  }
+  return lastError;
+}
+
 export default function JournalContent() {
   const { user, profile } = useAuth();
   const [entries, setEntries] = useState<JournalEntry[]>([]);
@@ -41,15 +71,28 @@ export default function JournalContent() {
 
   const saveEntry = async () => {
     if (!user || !content.trim()) { toast.error("Écris quelque chose"); return; }
-    const { error } = await supabase.from("journal_entries").insert({ user_id: user.id, content: content.trim(), mood_score: mood, visibility, prompt_used: currentPrompt || null });
-    if (!error) {
-      toast.success("Entrée sauvegardée 🌙");
-      if (mood <= 2 && profile) {
-        const partnerName = profile.role === "guide" ? "Binta" : "Djibril";
-        toast.info(`${partnerName}, ${profile.display_name} a besoin d'un mot doux 💛`, { duration: 6000 });
-      }
-      setContent(""); setMood(3); setShowEditor(false); randomizePrompt(); loadEntries();
+    const body = content.trim();
+    const error = await saveJournalEntryCompat({
+      user_id: user.id,
+      content: body,
+      mood_score: mood,
+      visibility,
+      prompt_used: currentPrompt || null,
+    });
+    if (error) {
+      toast.error("Journal non enregistré", { description: error.message });
+      return;
     }
+    toast.success("Entrée sauvegardée 🌙");
+    if (mood <= 2 && profile) {
+      const partnerName = profile.role === "guide" ? "Binta" : "Djibril";
+      toast.info(`${partnerName}, ${profile.display_name} a besoin d'un mot doux 💛`, { duration: 6000 });
+    }
+    setContent("");
+    setMood(3);
+    setShowEditor(false);
+    randomizePrompt();
+    loadEntries();
   };
 
   const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });

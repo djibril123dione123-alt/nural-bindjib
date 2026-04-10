@@ -20,6 +20,7 @@ export type Database = {
           actor_id: string
           user_id: string | null
           event_type?: string | null
+          event_label?: string | null
           created_at: string | null
           id: string
           xp_earned: number | null
@@ -29,6 +30,7 @@ export type Database = {
           actor_id: string
           user_id?: string | null
           event_type?: string
+          event_label?: string
           created_at?: string | null
           id?: string
           xp_earned?: number | null
@@ -38,6 +40,7 @@ export type Database = {
           actor_id?: string
           user_id?: string | null
           event_type?: string
+          event_label?: string
           created_at?: string | null
           id?: string
           xp_earned?: number | null
@@ -145,21 +148,27 @@ export type Database = {
       }
       duo_messages: {
         Row: {
-          content: string
+          body?: string | null
+          content?: string | null
           created_at: string | null
           id: string
+          receiver_id: string
           sender_id: string
         }
         Insert: {
-          content: string
-          created_at?: string | null
-          id?: string
-          sender_id: string
-        }
-        Update: {
+          body?: string
           content?: string
           created_at?: string | null
           id?: string
+          receiver_id: string
+          sender_id: string
+        }
+        Update: {
+          body?: string
+          content?: string
+          created_at?: string | null
+          id?: string
+          receiver_id?: string
           sender_id?: string
         }
         Relationships: []
@@ -190,6 +199,8 @@ export type Database = {
       }
       hifz_progress: {
         Row: {
+          ayah_end?: number | null
+          ayah_start?: number | null
           created_at: string | null
           end_verse: number
           id: string
@@ -204,6 +215,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ayah_end?: number | null
+          ayah_start?: number | null
           created_at?: string | null
           end_verse?: number
           id?: string
@@ -240,6 +253,7 @@ export type Database = {
           id: string
           mood_score: number | null
           prompt_used: string | null
+          title?: string | null
           updated_at: string | null
           user_id: string
           visibility: string
@@ -250,6 +264,7 @@ export type Database = {
           id?: string
           mood_score?: number | null
           prompt_used?: string | null
+          title?: string | null
           updated_at?: string | null
           user_id: string
           visibility?: string
@@ -260,6 +275,7 @@ export type Database = {
           id?: string
           mood_score?: number | null
           prompt_used?: string | null
+          title?: string | null
           updated_at?: string | null
           user_id?: string
           visibility?: string

@@ -349,12 +349,16 @@ export default function HifzContent() {
 
   const addEntry = async () => {
     if (!user || endVerse < startVerse) { toast.error("Verset fin ≥ début"); return; }
+    const s = Math.max(1, Number(startVerse) || 1);
+    const e = Math.max(s, Number(endVerse) || s);
     const { error } = await supabase.from("hifz_progress").insert({
       user_id: user.id,
       surah_number: selectedSurah.number,
       surah_name: selectedSurah.name,
-      start_verse: startVerse,
-      end_verse: endVerse,
+      start_verse: s,
+      end_verse: e,
+      ayah_start: s,
+      ayah_end: e,
       total_verses: selectedSurah.verses,
       percentage: pct,
     });

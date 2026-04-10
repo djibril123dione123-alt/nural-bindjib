@@ -1,7 +1,7 @@
 import { useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
 import { toast } from "sonner";
+import { applyXpDelta } from "@/lib/xpRpc";
 
 // Role-based XP multipliers
 const XP_TABLE: Record<string, { guide: number; guardian: number }> = {
@@ -26,31 +26,24 @@ export function useBaraka() {
   const getXp = useCallback((activity: string): number => {
     const entry = XP_TABLE[activity];
     if (!entry) return 10;
-    return entry[role];
+    const value = entry[role];
+    return Number.isFinite(value) ? value : 10;
   }, [role]);
 
   const awardXp = useCallback(async (amount: number, source: string) => {
     if (!user) return;
-
-    const { data, error } = await supabase.rpc("add_xp", {
-      p_user_id: user.id,
-      p_amount: amount,
-      p_source: source,
-    });
-
-    if (error) {
-      toast.error("Erreur XP", { description: error.message });
+    const safeAmount = Number(amount);
+    if (!Number.isFinite(safeAmount)) {
+      toast.error("Erreur XP", { description: "Montant XP invalide (undefined/NaN)." });
       return;
     }
 
-    // Be tolerant to different RPC return shapes.
-    const row = Array.isArray(data) ? data[0] : data;
-    const newTotal =
-      typeof row === "object" && row !== null && "new_xp" in row
-        ? (row as any).new_xp
-        : typeof data === "number"
-          ? data
-          : undefined;
+    const res = await applyXpDelta(user.id, safeAmount, source).catch((e: any) => {
+      toast.error("Erreur XP", { description: e?.message ?? "add_xp échoué" });
+      return null;
+    });
+    if (!res) return;
+    const newTotal = res.new_xp;
 
     if (navigator.vibrate) navigator.vibrate(50);
     return newTotal;
@@ -58,25 +51,18 @@ export function useBaraka() {
 
   const applyPenalty = useCallback(async (amount: number, reason: string) => {
     if (!user) return;
-
-    const { data, error } = await supabase.rpc("remove_xp", {
-      p_user_id: user.id,
-      p_amount: amount,
-      p_source: reason,
-    });
-
-    if (error) {
-      toast.error("Erreur XP", { description: error.message });
+    const safeAmount = Number(amount);
+    if (!Number.isFinite(safeAmount)) {
+      toast.error("Erreur XP", { description: "Montant XP invalide (undefined/NaN)." });
       return;
     }
 
-    const row = Array.isArray(data) ? data[0] : data;
-    const newTotal =
-      typeof row === "object" && row !== null && "new_xp" in row
-        ? (row as any).new_xp
-        : typeof data === "number"
-          ? data
-          : undefined;
+    const res = await applyXpDelta(user.id, -safeAmount, reason).catch((e: any) => {
+      toast.error("Erreur XP", { description: e?.message ?? "remove_xp échoué" });
+      return null;
+    });
+    if (!res) return;
+    const newTotal = res.new_xp;
 
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
     return newTotal;

@@ -66,7 +66,7 @@ function LevelUpOverlay({ level, onClose }: { level: number; onClose: () => void
   );
 }
 
-export default function MiroirAlliance() {
+export default function MiroirAlliance({ embedInHub = false }: { embedInHub?: boolean }) {
   const { user } = useAuth();
   const { partnerOnline, partnerStatus, streakCount } = useDuoPresence();
   const [profiles, setProfiles] = useState<ProfileData[]>([]);
@@ -216,6 +216,7 @@ export default function MiroirAlliance() {
       actor_id: user.id,
       user_id: user.id,
       event_type: "social",
+      event_label: "Message",
       action: `💌 ${message}`,
       xp_earned: 0,
     });
@@ -238,7 +239,7 @@ export default function MiroirAlliance() {
   if (loading) return <SkeletonScreen />;
 
   return (
-    <div className="min-h-screen bg-background pb-20">
+    <div className={`min-h-screen bg-background ${embedInHub ? "pb-4" : "pb-20"}`}>
       {/* Level Up Overlay */}
       <AnimatePresence>
         {levelUpLevel !== null && (
@@ -246,8 +247,8 @@ export default function MiroirAlliance() {
         )}
       </AnimatePresence>
 
-      <BackButton />
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 pt-16">
+      {!embedInHub && <BackButton />}
+      <div className={`max-w-2xl mx-auto px-4 py-6 space-y-6 ${embedInHub ? "pt-2" : "pt-16"}`}>
 
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-1">
@@ -399,7 +400,7 @@ export default function MiroirAlliance() {
           </div>
         )}
       </div>
-      <BottomNav />
+      {!embedInHub && <BottomNav />}
     </div>
   );
 }

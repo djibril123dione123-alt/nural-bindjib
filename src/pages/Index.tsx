@@ -119,13 +119,15 @@ const Index = () => {
 
         {/* Liens secondaires (hubs détaillés hors barre principale) */}
         <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-          <Link to="/miroir" className="hover:text-primary transition-colors">Miroir</Link>
+          <Link to="/synergie?tab=miroir" className="hover:text-primary transition-colors">Miroir</Link>
           <span className="opacity-40">·</span>
-          <Link to="/lab" className="hover:text-primary transition-colors">Lab</Link>
+          <Link to="/focus" className="hover:text-primary transition-colors">Focus</Link>
           <span className="opacity-40">·</span>
-          <Link to="/bilan" className="hover:text-primary transition-colors">Bilan</Link>
+          <Link to="/reflexion?tab=bilan" className="hover:text-primary transition-colors">Bilan</Link>
           <span className="opacity-40">·</span>
-          <Link to="/chat" className="hover:text-primary transition-colors">Chat</Link>
+          <Link to="/synergie?tab=chat" className="hover:text-primary transition-colors">Chat</Link>
+          <span className="opacity-40">·</span>
+          <Link to="/profile" className="hover:text-primary transition-colors">Profil</Link>
         </div>
 
         {/* Objectifs journaliers */}

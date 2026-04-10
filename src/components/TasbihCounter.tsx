@@ -46,6 +46,17 @@ export function TasbihCounter({ onComplete }: Props) {
     }
   }, [count, phase, completed, current, awardXp, onComplete]);
 
+  const validateAll = useCallback(() => {
+    if (completed) return;
+    setPhase(PHASES.length - 1);
+    setCount(PHASES[PHASES.length - 1].target);
+    setCompleted(true);
+    if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 100]);
+    awardXp(10, "Tasbih post-prière");
+    toast.success("Tasbih validé d’un coup ! +10 XP ✨");
+    onComplete?.();
+  }, [completed, awardXp, onComplete]);
+
   const reset = () => {
     setPhase(0);
     setCount(0);
@@ -111,6 +122,18 @@ export function TasbihCounter({ onComplete }: Props) {
           </div>
         ))}
       </div>
+
+      {!completed && (
+        <motion.button
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={validateAll}
+          className="w-full rounded-xl py-2 text-sm font-semibold bg-accent/15 border border-accent/30 text-accent hover:bg-accent/20 transition"
+        >
+          Valider tout d’un coup (100)
+        </motion.button>
+      )}
 
       {completed && (
         <motion.button

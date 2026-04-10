@@ -5,9 +5,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 const NAV_ITEMS = [
   { path: "/", icon: "🏠", label: "Accueil" },
   { path: "/tazkiyah", icon: "🕌", label: "Tazkiyah" },
-  { path: "/synergie", icon: "♾️", label: "Alliance" },
+  { path: "/focus", icon: "🎯", label: "Focus" },
   { path: "/reflexion", icon: "✍️", label: "Réflexion" },
-  { path: "/profile", icon: "👤", label: "Profil" },
+  { path: "/synergie", icon: "♾️", label: "Synergie" },
 ];
 
 export const BottomNav = forwardRef<HTMLDivElement>((_, ref) => {

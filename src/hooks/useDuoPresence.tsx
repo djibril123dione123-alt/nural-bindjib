@@ -15,6 +15,8 @@ export type DuoStatus = "libre" | "occupe" | "endormi" | "etudie";
 interface PresenceState {
   partnerOnline: boolean;
   partnerName: string;
+  /** Autre profil (alliance) — requis pour duo_messages.receiver_id côté DB. */
+  partnerUserId: string | null;
   partnerStatus: DuoStatus;
   streakCount: number;
   myStatus: DuoStatus;
@@ -37,6 +39,7 @@ export function DuoPresenceProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PresenceState>({
     partnerOnline: false,
     partnerName: "",
+    partnerUserId: null,
     partnerStatus: "libre",
     streakCount: 0,
     myStatus: "libre",
@@ -114,12 +117,18 @@ export function DuoPresenceProvider({ children }: { children: ReactNode }) {
     if (!user) return;
     supabase
       .from("profiles")
-      .select("display_name")
+      .select("id, display_name")
       .neq("id", user.id)
       .limit(1)
-      .single()
+      .maybeSingle()
       .then(({ data }) => {
-        if (data) setState((prev) => ({ ...prev, partnerName: data.display_name }));
+        if (data) {
+          setState((prev) => ({
+            ...prev,
+            partnerUserId: data.id,
+            partnerName: data.display_name ?? "",
+          }));
+        }
       });
   }, [user]);
 

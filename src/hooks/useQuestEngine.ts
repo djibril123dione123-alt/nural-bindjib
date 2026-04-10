@@ -5,7 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { ACTIVITY_EVENT_DEFAULT } from "@/lib/activityFeedDefaults";
+import { ACTIVITY_EVENT_DEFAULT, ACTIVITY_LABEL_DEFAULT } from "@/lib/activityFeedDefaults";
+import { applyXpDelta } from "@/lib/xpRpc";
 
 type CustomQuest = { id: string; label: string; xp: number; category: string };
 
@@ -120,13 +121,7 @@ export function useQuestEngine() {
       if (taskErr) throw new Error(`user_tasks upsert: ${taskErr.message}`);
 
       if (nowDone) {
-        const { data: rpc, error: rpcErr } = await supabase.rpc("add_xp", {
-          p_user_id: user.id,
-          p_amount:  xpValue,
-          p_source:  `task_${questId}`,
-        });
-        if (rpcErr) throw new Error(`add_xp: ${rpcErr.message}`);
-        const row = Array.isArray(rpc) ? rpc[0] : rpc;
+        const row = await applyXpDelta(user.id, xpValue, `task_${questId}`);
         if (row?.new_xp != null) setTotalXp(row.new_xp);
         if (row?.leveled_up === true) {
           setConfetti("levelup");
@@ -134,13 +129,7 @@ export function useQuestEngine() {
           setTimeout(() => setConfetti(null), 4500);
         }
       } else {
-        const { data: newXp, error: rpcErr } = await supabase.rpc("remove_xp", {
-          p_user_id: user.id,
-          p_amount:  xpValue,
-          p_source:  `unchecked_${questId}`,
-        });
-        if (rpcErr) throw new Error(`remove_xp: ${rpcErr.message}`);
-        const row = Array.isArray(newXp) ? newXp[0] : newXp;
+        const row = await applyXpDelta(user.id, -xpValue, `unchecked_${questId}`);
         if (row?.new_xp != null) setTotalXp(row.new_xp);
       }
 
@@ -155,7 +144,7 @@ export function useQuestEngine() {
       if (nowDone && newDay >= BARAKA_TARGET && prev < BARAKA_TARGET) {
         setConfetti("baraka");
         toast.success("✨ Objectif Baraka ! +50 XP !");
-        await supabase.rpc("add_xp", { p_user_id: user.id, p_amount: 50, p_source: "baraka_bonus" });
+        await applyXpDelta(user.id, 50, "baraka_bonus");
         setTimeout(() => setConfetti(null), 4500);
       }
 
@@ -163,6 +152,7 @@ export function useQuestEngine() {
         actor_id: user.id,
         user_id: user.id,
         event_type: ACTIVITY_EVENT_DEFAULT,
+        event_label: ACTIVITY_LABEL_DEFAULT,
         action: nowDone ? `validé [${pillar}] +${xpValue} XP` : `décoché [${pillar}]`,
         xp_earned: nowDone ? xpValue : -xpValue,
       };
@@ -180,10 +170,7 @@ export function useQuestEngine() {
 
   const applyPenalty = useCallback(async (amount: number, reason: string) => {
     if (!user?.id) return;
-    const { data: newXp } = await supabase.rpc("remove_xp", {
-      p_user_id: user.id, p_amount: amount, p_source: reason,
-    });
-    const row = Array.isArray(newXp) ? newXp[0] : newXp;
+    const row = await applyXpDelta(user.id, -amount, reason);
     if (row?.new_xp != null) setTotalXp(row.new_xp);
   }, [user?.id]);
 

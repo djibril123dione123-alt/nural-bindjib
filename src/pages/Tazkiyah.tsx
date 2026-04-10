@@ -63,7 +63,7 @@ interface ChallengeEntry {
   date: string;
 }
 
-const Tazkiyah = () => {
+const Tazkiyah = ({ embedded = false }: { embedded?: boolean }) => {
   const { user } = useAuth();
   const [entries, setEntries] = useState<ChallengeEntry[]>([]);
   const [expandedChallenge, setExpandedChallenge] = useState<string | null>(null);
@@ -132,7 +132,7 @@ const Tazkiyah = () => {
   const totalBadges = CHALLENGES.filter(ch => getStreak(ch.type) >= 7).length;
 
   return (
-    <div className="min-h-screen bg-background pb-20 relative overflow-hidden">
+    <div className={`min-h-screen bg-background relative overflow-hidden ${embedded ? "pb-4" : "pb-20"}`}>
       <GoldenParticles trigger={trigger} />
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -299,7 +299,7 @@ const Tazkiyah = () => {
           );
         })}
       </div>
-      <BottomNav />
+      {!embedded && <BottomNav />}
     </div>
   );
 };

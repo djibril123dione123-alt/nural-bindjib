@@ -3,34 +3,31 @@ import { motion } from "framer-motion";
 import { useSearchParams } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { GlassTabs } from "@/components/GlassTabs";
-import JournalContent from "@/components/modules/JournalContent";
-import StatsContent from "@/components/modules/StatsContent";
-import BilanSoir from "@/pages/BilanSoir";
+import DeepWorkContent from "@/components/modules/DeepWorkContent";
+import AlterEgoLabContent from "@/components/modules/AlterEgoLabContent";
 
-const TAB_IDS = ["journal", "bilan", "stats"] as const;
+const TAB_IDS = ["deepwork", "missions"] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 const TABS = [
-  { id: "journal", label: "Journal", icon: "📝" },
-  { id: "bilan", label: "Bilan", icon: "🌙" },
-  { id: "stats", label: "Stats", icon: "📊" },
+  { id: "deepwork", label: "Deep Work", icon: "🎯" },
+  { id: "missions", label: "Alter Ego", icon: "⚔️" },
 ];
 
-export default function ReflexionHub() {
+export default function FocusHub() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const initial: TabId =
-    tabParam && (TAB_IDS as readonly string[]).includes(tabParam) ? (tabParam as TabId) : "journal";
+  const initial: TabId = tabParam === "missions" ? "missions" : "deepwork";
   const [activeTab, setActiveTab] = useState<TabId>(initial);
 
   useEffect(() => {
-    if (tabParam && (TAB_IDS as readonly string[]).includes(tabParam)) {
-      setActiveTab(tabParam as TabId);
+    if (tabParam === "missions" || tabParam === "deepwork") {
+      setActiveTab(tabParam);
     }
   }, [tabParam]);
 
   const onTab = (id: string) => {
-    const t = (TAB_IDS as readonly string[]).includes(id) ? (id as TabId) : "journal";
+    const t = (TAB_IDS as readonly string[]).includes(id) ? (id as TabId) : "deepwork";
     setActiveTab(t);
     setSearchParams({ tab: t }, { replace: true });
   };
@@ -39,16 +36,15 @@ export default function ReflexionHub() {
     <div className="min-h-screen bg-background pb-20">
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center space-y-1">
-          <h1 className="text-2xl font-display font-bold text-gradient-emerald">✍️ Réflexion</h1>
-          <p className="text-xs text-muted-foreground">Journal, bilan du soir & statistiques</p>
+          <h1 className="text-2xl font-display font-bold text-gradient-emerald">🎯 Focus</h1>
+          <p className="text-xs text-muted-foreground">Productivité profonde & missions</p>
         </motion.div>
 
         <GlassTabs tabs={TABS} active={activeTab} onChange={onTab} />
 
         <motion.div key={activeTab} initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.2 }}>
-          {activeTab === "journal" && <JournalContent />}
-          {activeTab === "bilan" && <BilanSoir embedded />}
-          {activeTab === "stats" && <StatsContent />}
+          {activeTab === "deepwork" && <DeepWorkContent />}
+          {activeTab === "missions" && <AlterEgoLabContent />}
         </motion.div>
       </div>
       <BottomNav />

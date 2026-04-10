@@ -6,6 +6,7 @@ import React, { useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { applyXpDelta } from "@/lib/xpRpc";
 
 const PILLARS = ["body", "mind", "faith", "life"] as const;
 const PENALTY_PER_PILLAR = 30;
@@ -82,14 +83,11 @@ async function runPenalty(userId: string) {
 
   const totalPenalty = emptyPillars.length * PENALTY_PER_PILLAR;
 
-  const { data: newXpData, error } = await supabase.rpc("remove_xp", {
-    p_user_id: userId,
-    p_amount:  totalPenalty,
-    p_source:  "midnight_penalty",
-  });
-
-  if (error) {
-    console.error("[MidnightPenalty] Erreur RPC remove_xp :", error);
+  let newXpData: any;
+  try {
+    newXpData = await applyXpDelta(userId, -totalPenalty, "midnight_penalty");
+  } catch (error) {
+    console.error("[MidnightPenalty] Erreur XP :", error);
     return;
   }
 
@@ -105,6 +103,7 @@ async function runPenalty(userId: string) {
     actor_id: userId,
     user_id: userId,
     event_type: "penalty",
+    event_label: "Pénalité",
     action: `⚠️ Discipline de Fer : ${pillarList} non accomplis (-${totalPenalty} XP)`,
     xp_earned: -totalPenalty,
   });

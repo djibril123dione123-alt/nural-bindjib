@@ -11,7 +11,37 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, ResponsiveContainer } from "recharts";
 
-const BilanSoir = () => {
+async function saveJournalEntryCompat(payload: {
+  user_id: string;
+  content: string;
+  mood_score: number;
+  visibility: "private" | "shared";
+  prompt_used: string | null;
+}) {
+  const attempts = [
+    () => supabase.from("journal_entries").insert(payload),
+    () => supabase.from("journal_entries").insert({
+      user_id: payload.user_id,
+      content: payload.content,
+      mood_score: payload.mood_score,
+      visibility: payload.visibility,
+    }),
+    () => supabase.from("journal_entries").insert({
+      user_id: payload.user_id,
+      content: payload.content,
+    }),
+  ];
+
+  let lastError: any = null;
+  for (const attempt of attempts) {
+    const { error } = await attempt();
+    if (!error) return { error: null };
+    lastError = error;
+  }
+  return { error: lastError };
+}
+
+const BilanSoir = ({ embedded = false }: { embedded?: boolean }) => {
   const { user, profile } = useAuth();
   const { completed, dailyXp, totalXp, pillarProgress } = useQuestEngine();
   const [yesterdayXp, setYesterdayXp] = useState(0);
@@ -71,7 +101,7 @@ const BilanSoir = () => {
     const inserts: Promise<{ error: { message: string } | null }>[] = [];
     if (reflection.trim()) {
       inserts.push(
-        supabase.from("journal_entries").insert({
+        saveJournalEntryCompat({
           user_id: user.id,
           content: reflection.trim(),
           prompt_used: "Bilan du soir — Réflexion",
@@ -81,7 +111,7 @@ const BilanSoir = () => {
       );
     }
     inserts.push(
-      supabase.from("journal_entries").insert({
+      saveJournalEntryCompat({
         user_id: user.id,
         content: `💛 Gratitude pour ${partnerName}: ${gratitude.trim()}`,
         prompt_used: "Bilan du soir — Gratitude partagée",
@@ -102,7 +132,7 @@ const BilanSoir = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background pb-20 relative overflow-hidden">
+    <div className={`min-h-screen bg-background relative overflow-hidden ${embedded ? "pb-4" : "pb-20"}`}>
       <GoldenParticles trigger={trigger} />
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
@@ -227,7 +257,7 @@ const BilanSoir = () => {
           </div>
         )}
       </div>
-      <BottomNav />
+      {!embedded && <BottomNav />}
     </div>
   );
 };
