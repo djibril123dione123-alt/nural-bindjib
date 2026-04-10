@@ -131,14 +131,18 @@ export function useSanctuaryTime() {
       .select("prayer_name, custom_time")
       .eq("user_id", user.id);
 
-    if (!firstTry.error) {
+    if (!firstTry.error && (firstTry.data?.length ?? 0) > 0) {
       data = firstTry.data ?? [];
     } else {
-      // Compat schémas sans user_id.
+      // Compat schémas legacy : table sans user_id ou données globales par prayer_name.
       const fallback = await supabase
         .from("sanctuary_settings")
         .select("prayer_name, custom_time");
-      if (!fallback.error) data = fallback.data ?? [];
+      if (!fallback.error) {
+        data = fallback.data ?? [];
+      } else {
+        data = [];
+      }
     }
 
     if (data && data.length > 0) {
@@ -175,18 +179,16 @@ export function useSanctuaryTime() {
   // Update a prayer time
   const updateTime = useCallback(async (prayerKey: string, newTime: string) => {
     if (!user) return;
-    // Optimistic update for instant UI persistence.
-    setTimes((prev) => ({ ...prev, [prayerKey]: newTime }));
 
     const error = await trySavePrayerTime(prayerKey, newTime, user.id);
     if (error) {
-      // Rollback and notify.
-      await loadTimes();
       toast.error("Erreur de connexion", {
         description: error.message || "Impossible d'enregistrer l'heure.",
       });
       return;
     }
+    // Met à jour le state local seulement après confirmation DB.
+    setTimes((prev) => ({ ...prev, [prayerKey]: newTime }));
     toast.success("Heure enregistrée");
   }, [user, loadTimes]);
 
