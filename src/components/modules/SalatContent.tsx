@@ -32,7 +32,7 @@ interface SalatEntry {
 export default function SalatContent() {
   const { user } = useAuth();
   const { getXp, awardXp, applyPenalty } = useBaraka();
-  const { prayers, updateTime, nextPrayer, atmosphere } = useSanctuaryTime();
+  const { prayers, updateTime, nextPrayer, atmosphere, isLoading: isTimesLoading } = useSanctuaryTime();
   const { partnerOnline, partnerName, streakCount, recordStreak } = useDuoPresence();
   const [entries, setEntries] = useState<SalatEntry[]>([]);
   const [editingTime, setEditingTime] = useState<string | null>(null);
@@ -234,6 +234,12 @@ export default function SalatContent() {
             {partnerName} {partnerOnline ? "en ligne" : "hors-ligne"}
           </span>
         </motion.div>
+        {isTimesLoading && (
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span className="inline-block w-3 h-3 rounded-full border border-primary/30 border-t-primary animate-spin" />
+            Chargement des horaires...
+          </div>
+        )}
         {streakCount > 0 && (
           <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}
             className="flex items-center gap-1 bg-accent/10 border border-accent/30 rounded-full px-2 py-0.5">

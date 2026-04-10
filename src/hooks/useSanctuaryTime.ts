@@ -28,6 +28,15 @@ export interface PrayerTimeEntry {
   isPast: boolean;
 }
 
+const DEFAULT_PRAYER_TIMES: Record<string, string> = {
+  fajr: "05:42",
+  suba: "05:57",
+  dhuhr: "14:15",
+  asr: "17:00",
+  maghrib: "19:31",
+  isha: "20:31",
+};
+
 async function trySavePrayerTime(prayerKey: string, newTime: string, userId: string) {
   const stamp = new Date().toISOString();
 
@@ -37,13 +46,28 @@ async function trySavePrayerTime(prayerKey: string, newTime: string, userId: str
         .from("sanctuary_settings")
         .upsert(
           {
+            user_id: userId,
             prayer_name: prayerKey,
             custom_time: newTime,
             updated_by: userId,
             updated_at: stamp,
           },
-          { onConflict: "prayer_name" },
+          { onConflict: "user_id,prayer_name" },
         ),
+    async () =>
+      supabase
+        .from("sanctuary_settings")
+        .upsert(
+          {
+            user_id: userId,
+            prayer_name: prayerKey,
+            custom_time: newTime,
+            updated_by: "00000000-0000-0000-0000-000000000000",
+            updated_at: stamp,
+          },
+          { onConflict: "user_id,prayer_name" },
+        ),
+    // Compat anciens schémas sans user_id / index composite.
     async () =>
       supabase
         .from("sanctuary_settings")
@@ -51,7 +75,7 @@ async function trySavePrayerTime(prayerKey: string, newTime: string, userId: str
           {
             prayer_name: prayerKey,
             custom_time: newTime,
-            updated_by: "00000000-0000-0000-0000-000000000000",
+            updated_by: userId,
             updated_at: stamp,
           },
           { onConflict: "prayer_name" },
@@ -87,20 +111,47 @@ async function trySavePrayerTime(prayerKey: string, newTime: string, userId: str
 
 export function useSanctuaryTime() {
   const { user } = useAuth();
-  const [times, setTimes] = useState<Record<string, string>>({});
+  const [times, setTimes] = useState<Record<string, string>>(DEFAULT_PRAYER_TIMES);
   const [now, setNow] = useState(new Date());
+  const [isLoading, setIsLoading] = useState(true);
 
   // Load times from DB
   const loadTimes = useCallback(async () => {
-    const { data } = await supabase
-      .from("sanctuary_settings")
-      .select("prayer_name, custom_time");
-    if (data) {
-      const map: Record<string, string> = {};
-      data.forEach((r: any) => { map[r.prayer_name] = r.custom_time; });
-      setTimes(map);
+    if (!user?.id) {
+      setTimes(DEFAULT_PRAYER_TIMES);
+      setIsLoading(false);
+      return;
     }
-  }, []);
+
+    setIsLoading(true);
+    let data: any[] | null = null;
+
+    const firstTry = await supabase
+      .from("sanctuary_settings")
+      .select("prayer_name, custom_time")
+      .eq("user_id", user.id);
+
+    if (!firstTry.error) {
+      data = firstTry.data ?? [];
+    } else {
+      // Compat schémas sans user_id.
+      const fallback = await supabase
+        .from("sanctuary_settings")
+        .select("prayer_name, custom_time");
+      if (!fallback.error) data = fallback.data ?? [];
+    }
+
+    if (data && data.length > 0) {
+      const map: Record<string, string> = { ...DEFAULT_PRAYER_TIMES };
+      data.forEach((r: any) => {
+        if (r?.prayer_name && r?.custom_time) map[r.prayer_name] = r.custom_time;
+      });
+      setTimes(map);
+    } else {
+      setTimes(DEFAULT_PRAYER_TIMES);
+    }
+    setIsLoading(false);
+  }, [user?.id]);
 
   useEffect(() => { loadTimes(); }, [loadTimes]);
 
@@ -177,5 +228,5 @@ export function useSanctuaryTime() {
   // Next prayer info
   const nextPrayer = useMemo(() => prayers.find(p => p.isNext) || null, [prayers]);
 
-  return { prayers, times, updateTime, atmosphere, nextPrayer, now };
+  return { prayers, times, updateTime, atmosphere, nextPrayer, now, isLoading };
 }
