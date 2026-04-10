@@ -48,7 +48,15 @@ export default function AlterEgoLabContent() {
 
   const completeMission = async (mission: Mission) => {
     await supabase.from("alter_ego_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", mission.id);
-    if (user) await supabase.from("activity_feed").insert({ actor_id: user.id, action: `a terminé la mission "${mission.title}"`, xp_earned: mission.xp });
+    if (user) {
+      await supabase.from("activity_feed").insert({
+        actor_id: user.id,
+        user_id: user.id,
+        event_type: "mission",
+        action: `a terminé la mission "${mission.title}"`,
+        xp_earned: mission.xp,
+      });
+    }
     toast.success(`+${mission.xp} XP — Mission accomplie ! 🎉`);
   };
 

@@ -88,6 +88,8 @@ export default function AlterEgoLab() {
     if (user) {
       await supabase.from("activity_feed").insert({
         actor_id: user.id,
+        user_id: user.id,
+        event_type: "mission",
         action: `a terminé la mission "${mission.title}"`,
         xp_earned: mission.xp,
       });

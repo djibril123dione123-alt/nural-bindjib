@@ -350,10 +350,23 @@ export default function HifzContent() {
   const addEntry = async () => {
     if (!user || endVerse < startVerse) { toast.error("Verset fin ≥ début"); return; }
     const { error } = await supabase.from("hifz_progress").insert({
-      user_id: user.id, surah_number: selectedSurah.number, surah_name: selectedSurah.name,
-      start_verse: startVerse, end_verse: endVerse, total_verses: selectedSurah.verses, percentage: pct,
+      user_id: user.id,
+      surah_number: selectedSurah.number,
+      surah_name: selectedSurah.name,
+      start_verse: startVerse,
+      end_verse: endVerse,
+      total_verses: selectedSurah.verses,
+      percentage: pct,
     });
-    if (!error) { fire(); toast.success(`${selectedSurah.name} ajouté !`); setShowForm(false); load(); }
+    if (error) {
+      console.warn("[hifz_progress]", error.message);
+      toast.error("Hifz non enregistré", { description: error.message });
+      return;
+    }
+    fire();
+    toast.success(`${selectedSurah.name} ajouté !`);
+    setShowForm(false);
+    load();
   };
 
   const reviewEntry = async (entry: HifzEntry) => {

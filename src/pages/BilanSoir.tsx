@@ -29,13 +29,25 @@ const BilanSoir = () => {
 
   useEffect(() => {
     if (!user) return;
-    // Yesterday XP
-    supabase.from("daily_progress").select("daily_xp").eq("user_id", user.id).eq("date", yesterday).single()
-      .then(({ data }) => { if (data) setYesterdayXp(data.daily_xp || 0); });
-    // Partner XP
-    supabase.from("daily_progress").select("daily_xp").neq("user_id", user.id).eq("date", today).single()
-      .then(({ data }) => { if (data) setPartnerXp(data.daily_xp || 0); });
-  }, [user, yesterday]);
+    (async () => {
+      const { data: mine } = await supabase
+        .from("daily_progress")
+        .select("daily_xp")
+        .eq("user_id", user.id)
+        .eq("date", yesterday)
+        .maybeSingle();
+      setYesterdayXp(mine?.daily_xp ?? 0);
+
+      // .single() avec .neq() peut renvoyer 406 (0 ou plusieurs lignes) : une seule ligne max.
+      const { data: others } = await supabase
+        .from("daily_progress")
+        .select("daily_xp")
+        .neq("user_id", user.id)
+        .eq("date", today)
+        .limit(1);
+      setPartnerXp(others?.[0]?.daily_xp ?? 0);
+    })();
+  }, [user, yesterday, today]);
 
   const incompleteQuests = useMemo(() => {
     return PILLARS.flatMap(p =>
@@ -56,19 +68,34 @@ const BilanSoir = () => {
     if (!user) return;
     if (!gratitude.trim()) { toast.error("Écris au moins une gratitude 💛"); return; }
 
-    const promises = [];
+    const inserts: Promise<{ error: { message: string } | null }>[] = [];
     if (reflection.trim()) {
-      promises.push(supabase.from("journal_entries").insert({
-        user_id: user.id, content: reflection,
-        prompt_used: "Bilan du soir — Réflexion", mood_score: 3, visibility: "private",
-      }));
+      inserts.push(
+        supabase.from("journal_entries").insert({
+          user_id: user.id,
+          content: reflection.trim(),
+          prompt_used: "Bilan du soir — Réflexion",
+          mood_score: 3,
+          visibility: "private",
+        }),
+      );
     }
-    promises.push(supabase.from("journal_entries").insert({
-      user_id: user.id, content: `💛 Gratitude pour ${partnerName}: ${gratitude}`,
-      prompt_used: "Bilan du soir — Gratitude partagée", mood_score: 5, visibility: "shared",
-    }));
+    inserts.push(
+      supabase.from("journal_entries").insert({
+        user_id: user.id,
+        content: `💛 Gratitude pour ${partnerName}: ${gratitude.trim()}`,
+        prompt_used: "Bilan du soir — Gratitude partagée",
+        mood_score: 5,
+        visibility: "shared",
+      }),
+    );
 
-    await Promise.all(promises);
+    const results = await Promise.all(inserts);
+    const firstErr = results.find((r) => r.error)?.error;
+    if (firstErr) {
+      toast.error("Impossible d'enregistrer le journal", { description: firstErr.message });
+      return;
+    }
     fire();
     toast.success("Bilan enregistré 🌙");
     setSaved(true);

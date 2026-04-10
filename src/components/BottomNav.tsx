@@ -3,11 +3,11 @@ import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const NAV_ITEMS = [
-  { path: "/", icon: "🏠", label: "Home" },
+  { path: "/", icon: "🏠", label: "Accueil" },
   { path: "/tazkiyah", icon: "🕌", label: "Tazkiyah" },
-  { path: "/miroir", icon: "🪞", label: "Miroir" },
-  { path: "/lab", icon: "🧪", label: "Lab" },
-  { path: "/synergie", icon: "♾️", label: "Synergie" },
+  { path: "/synergie", icon: "♾️", label: "Alliance" },
+  { path: "/reflexion", icon: "✍️", label: "Réflexion" },
+  { path: "/profile", icon: "👤", label: "Profil" },
 ];
 
 export const BottomNav = forwardRef<HTMLDivElement>((_, ref) => {

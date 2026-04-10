@@ -214,6 +214,8 @@ export default function MiroirAlliance() {
 
     await supabase.from("activity_feed").insert({
       actor_id: user.id,
+      user_id: user.id,
+      event_type: "social",
       action: `💌 ${message}`,
       xp_earned: 0,
     });

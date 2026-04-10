@@ -8,6 +8,7 @@
 // ============================================================
 
 import { motion } from "framer-motion";
+import { Link } from "react-router-dom";
 import { getPillarsForRole } from "@/lib/questData";
 import { useQuestEngine } from "@/hooks/useQuestEngine";
 import { useAuth } from "@/hooks/useAuth";
@@ -115,6 +116,17 @@ const Index = () => {
             </motion.div>
           </div>
         </motion.div>
+
+        {/* Liens secondaires (hubs détaillés hors barre principale) */}
+        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+          <Link to="/miroir" className="hover:text-primary transition-colors">Miroir</Link>
+          <span className="opacity-40">·</span>
+          <Link to="/lab" className="hover:text-primary transition-colors">Lab</Link>
+          <span className="opacity-40">·</span>
+          <Link to="/bilan" className="hover:text-primary transition-colors">Bilan</Link>
+          <span className="opacity-40">·</span>
+          <Link to="/chat" className="hover:text-primary transition-colors">Chat</Link>
+        </div>
 
         {/* Objectifs journaliers */}
         <div className="flex gap-3">

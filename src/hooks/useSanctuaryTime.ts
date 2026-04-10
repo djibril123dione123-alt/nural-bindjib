@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { toast } from "sonner";
 
 // Prayer name mapping (Wolof/Arabic → standard)
 export const PRAYER_GRID = [
@@ -66,11 +67,40 @@ export function useSanctuaryTime() {
   // Update a prayer time
   const updateTime = useCallback(async (prayerKey: string, newTime: string) => {
     if (!user) return;
-    await supabase
+    // Optimistic update for instant UI persistence.
+    setTimes((prev) => ({ ...prev, [prayerKey]: newTime }));
+
+    // Prefer UPDATE (avoids some PostgREST on_conflict 400 edge cases),
+    // fallback to INSERT if the row doesn't exist yet.
+    const { data: updatedRows, error: updateErr } = await supabase
       .from("sanctuary_settings")
-      .update({ custom_time: newTime, updated_by: user.id, updated_at: new Date().toISOString() })
-      .eq("prayer_name", prayerKey);
-  }, [user]);
+      .update({
+        custom_time: newTime,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("prayer_name", prayerKey)
+      // Colonne toujours présente (évite PGRST 400 si `id` absent ou non exposé)
+      .select("prayer_name");
+
+    const needsInsert = !updateErr && Array.isArray(updatedRows) && updatedRows.length === 0;
+    const { error: insertErr } = needsInsert
+      ? await supabase.from("sanctuary_settings").insert({
+          prayer_name: prayerKey,
+          custom_time: newTime,
+          updated_by: user.id,
+          updated_at: new Date().toISOString(),
+        })
+      : { error: null as any };
+
+    if (updateErr || insertErr) {
+      // Rollback and notify.
+      await loadTimes();
+      toast.error("Erreur de connexion", { description: "Impossible d'enregistrer l'heure." });
+      return;
+    }
+    toast.success("Heure enregistrée");
+  }, [user, loadTimes]);
 
   // Compute prayer states
   const prayers = useMemo((): PrayerTimeEntry[] => {

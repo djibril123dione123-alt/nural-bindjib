@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 interface Message {
   id: string; sender_id: string; content: string; created_at: string;
@@ -29,7 +30,15 @@ export default function ChatContent() {
 
   const send = async () => {
     if (!input.trim() || !user) return;
-    await supabase.from("duo_messages").insert({ sender_id: user.id, content: input.trim() });
+    const { error } = await supabase.from("duo_messages").insert({
+      sender_id: user.id,
+      content: input.trim(),
+    });
+    if (error) {
+      console.warn("[duo_messages]", error.message);
+      toast.error("Message non envoyé", { description: error.message });
+      return;
+    }
     setInput("");
   };
 

@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { ACTIVITY_EVENT_DEFAULT } from "@/lib/activityFeedDefaults";
 
 type CustomQuest = { id: string; label: string; xp: number; category: string };
 
@@ -158,11 +159,15 @@ export function useQuestEngine() {
         setTimeout(() => setConfetti(null), 4500);
       }
 
-      supabase.from("activity_feed").insert({
-        actor_id:  user.id,
-        action:    nowDone ? `validé [${pillar}] +${xpValue} XP` : `décoché [${pillar}]`,
+      const feedRow: TablesInsert<"activity_feed"> = {
+        actor_id: user.id,
+        user_id: user.id,
+        event_type: ACTIVITY_EVENT_DEFAULT,
+        action: nowDone ? `validé [${pillar}] +${xpValue} XP` : `décoché [${pillar}]`,
         xp_earned: nowDone ? xpValue : -xpValue,
-      }).then(() => {});
+      };
+      const { error: feedErr } = await supabase.from("activity_feed").insert(feedRow);
+      if (feedErr) console.warn("[activity_feed]", feedErr.message);
 
     } catch (err: any) {
       setCompleted(prev => ({ ...prev, [questId]: wasDone }));

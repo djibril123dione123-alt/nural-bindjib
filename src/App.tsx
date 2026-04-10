@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
 // ✅ FIX BUILD : import depuis .tsx (contient du JSX)
 import { MidnightPenaltyGuard } from "@/hooks/useMidnightPenalty";
+import { NotificationOnboarding } from "@/components/NotificationOnboarding";
 
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -19,6 +20,14 @@ import LabHub from "./pages/LabHub";
 import ReflexionHub from "./pages/ReflexionHub";
 import SynergieHub from "./pages/SynergieHub";
 import MiroirAlliance from "./pages/MiroirAlliance";
+import DuoChat from "./pages/DuoChat";
+import DeepWork from "./pages/DeepWork";
+import JournalSakinah from "./pages/JournalSakinah";
+import HifzTracker from "./pages/HifzTracker";
+import SalatTracker from "./pages/SalatTracker";
+import AlterEgoLab from "./pages/AlterEgoLab";
+import BilanSoir from "./pages/BilanSoir";
+import Tazkiyah from "./pages/Tazkiyah";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -33,6 +42,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) return <SkeletonScreen />;
   if (!user)   return <Navigate to="/auth" replace />;
   return <>{children}</>;
+}
+
+/** Onboarding notifs : uniquement utilisateur connecté (évite flash sur /auth). */
+function NotificationOnboardingGate() {
+  const { user, loading } = useAuth();
+  if (loading || !user) return null;
+  return <NotificationOnboarding />;
 }
 
 function AnimatedRoutes() {
@@ -52,10 +68,18 @@ function AnimatedRoutes() {
           <Route path="/profile"    element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/dashboard"  element={<Navigate to="/" replace />} />
           <Route path="/tazkiyah"   element={<ProtectedRoute><TazkiyahHub /></ProtectedRoute>} />
+          <Route path="/tazkiyah/challenges" element={<ProtectedRoute><Tazkiyah /></ProtectedRoute>} />
           <Route path="/lab"        element={<ProtectedRoute><LabHub /></ProtectedRoute>} />
+          <Route path="/lab/alter-ego" element={<ProtectedRoute><AlterEgoLab /></ProtectedRoute>} />
           <Route path="/reflexion"  element={<ProtectedRoute><ReflexionHub /></ProtectedRoute>} />
           <Route path="/synergie"   element={<ProtectedRoute><SynergieHub /></ProtectedRoute>} />
           <Route path="/miroir"     element={<ProtectedRoute><MiroirAlliance /></ProtectedRoute>} />
+          <Route path="/salat"      element={<ProtectedRoute><SalatTracker /></ProtectedRoute>} />
+          <Route path="/hifz"       element={<ProtectedRoute><HifzTracker /></ProtectedRoute>} />
+          <Route path="/journal"    element={<ProtectedRoute><JournalSakinah /></ProtectedRoute>} />
+          <Route path="/deepwork"   element={<ProtectedRoute><DeepWork /></ProtectedRoute>} />
+          <Route path="/chat"       element={<ProtectedRoute><DuoChat /></ProtectedRoute>} />
+          <Route path="/bilan"      element={<ProtectedRoute><BilanSoir /></ProtectedRoute>} />
           <Route path="*"           element={<NotFound />} />
         </Routes>
       </motion.div>
@@ -77,6 +101,7 @@ const App = () => (
               </AudioEngineProvider>
             </MidnightPenaltyGuard>
           </DuoPresenceProvider>
+          <NotificationOnboardingGate />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

@@ -8,7 +8,8 @@ export function NotificationOnboarding() {
 
   useEffect(() => {
     // Afficher uniquement si la permission n'a pas encore été demandée
-    if (swRegistered && notifPermission === "default") {
+    const declined = localStorage.getItem("notif_declined") === "true";
+    if (!declined && swRegistered && notifPermission === "default") {
       const timer = setTimeout(() => setShow(true), 2000);
       return () => clearTimeout(timer);
     }

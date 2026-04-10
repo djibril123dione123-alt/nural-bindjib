@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           action: string
           actor_id: string
+          user_id: string | null
+          event_type?: string | null
           created_at: string | null
           id: string
           xp_earned: number | null
@@ -25,6 +27,8 @@ export type Database = {
         Insert: {
           action: string
           actor_id: string
+          user_id?: string | null
+          event_type?: string
           created_at?: string | null
           id?: string
           xp_earned?: number | null
@@ -32,6 +36,8 @@ export type Database = {
         Update: {
           action?: string
           actor_id?: string
+          user_id?: string | null
+          event_type?: string
           created_at?: string | null
           id?: string
           xp_earned?: number | null

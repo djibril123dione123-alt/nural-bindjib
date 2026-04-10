@@ -102,8 +102,10 @@ async function runPenalty(userId: string) {
   const pillarList = emptyPillars.map((p) => PILLAR_LABELS[p]).join(", ");
 
   await supabase.from("activity_feed").insert({
-    actor_id:  userId,
-    action:    `⚠️ Discipline de Fer : ${pillarList} non accomplis (-${totalPenalty} XP)`,
+    actor_id: userId,
+    user_id: userId,
+    event_type: "penalty",
+    action: `⚠️ Discipline de Fer : ${pillarList} non accomplis (-${totalPenalty} XP)`,
     xp_earned: -totalPenalty,
   });
 

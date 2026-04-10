@@ -36,6 +36,7 @@ export default function SalatContent() {
   const { partnerOnline, partnerName, streakCount, recordStreak } = useDuoPresence();
   const [entries, setEntries] = useState<SalatEntry[]>([]);
   const [editingTime, setEditingTime] = useState<string | null>(null);
+  const [draftTime, setDraftTime] = useState<Record<string, string>>({});
   const [mosqueDone, setMosqueDone] = useState<Record<string, boolean>>({});
   const [showTasbih, setShowTasbih] = useState<string | null>(null);
   const [preQuranDone, setPreQuranDone] = useState<Record<string, boolean>>({});
@@ -66,6 +67,27 @@ export default function SalatContent() {
   const getEntry = useCallback((name: string) => {
     return entriesRef.current.find(e => e.prayer_name === name);
   }, []);
+
+  const startEditTime = useCallback((prayerKey: string, currentTime: string) => {
+    setDraftTime((prev) => ({ ...prev, [prayerKey]: prev[prayerKey] ?? currentTime }));
+    setEditingTime(prayerKey);
+  }, []);
+
+  const cancelEditTime = useCallback((prayerKey: string) => {
+    setDraftTime((prev) => {
+      const next = { ...prev };
+      delete next[prayerKey];
+      return next;
+    });
+    setEditingTime(null);
+  }, []);
+
+  const saveEditTime = useCallback(async (prayerKey: string) => {
+    const next = draftTime[prayerKey];
+    if (!next) return;
+    await updateTime(prayerKey, next);
+    cancelEditTime(prayerKey);
+  }, [draftTime, updateTime, cancelEditTime]);
 
   const togglePrayer = useCallback(async (prayerKey: string) => {
     if (!user) return;
@@ -342,16 +364,31 @@ export default function SalatContent() {
 
                 <div className="flex items-center gap-2 mt-0.5">
                   {editingTime === prayer.key ? (
-                    <input
-                      type="time"
-                      defaultValue={prayer.time}
-                      onBlur={(e) => { updateTime(prayer.key, e.target.value); setEditingTime(null); }}
-                      autoFocus
-                      className="bg-secondary/50 border border-border rounded px-2 py-0.5 text-xs text-foreground"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="time"
+                        value={draftTime[prayer.key] ?? prayer.time}
+                        onChange={(e) => setDraftTime((p) => ({ ...p, [prayer.key]: e.target.value }))}
+                        className="bg-secondary/50 border border-border rounded px-2 py-0.5 text-xs text-foreground"
+                      />
+                      <button
+                        onClick={() => saveEditTime(prayer.key)}
+                        className="text-[10px] px-2 py-0.5 rounded border border-accent/30 text-accent hover:bg-accent/10 transition-colors"
+                      >
+                        Enregistrer
+                      </button>
+                      <button
+                        onClick={() => cancelEditTime(prayer.key)}
+                        className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Annuler
+                      </button>
+                    </div>
                   ) : (
-                    <button onClick={() => setEditingTime(prayer.key)}
-                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors">
+                    <button
+                      onClick={() => startEditTime(prayer.key, prayer.time)}
+                      className="text-[10px] text-muted-foreground hover:text-primary transition-colors"
+                    >
                       ⏰ Modifier l'heure
                     </button>
                   )}
