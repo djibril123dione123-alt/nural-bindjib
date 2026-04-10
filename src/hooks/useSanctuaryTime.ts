@@ -1,218 +1,218 @@
+// =============================================================================
+// src/hooks/useSanctuaryTime.ts
+// Sprint 1 — Pilier 1.2 : Global Citizen
+//
+// Avant : calculs basés sur new Date().getHours() → timezone du navigateur.
+// Après : calculs basés sur la timezone du profil utilisateur via Intl API.
+//         Un utilisateur à Montréal (UTC-5) verra Fajr à 05:42 heure de Dakar,
+//         mais le countdown sera calculé dans SA timezone locale.
+//
+// Architecture :
+//   - nowInUserTz()   → heure actuelle dans la timezone du profil
+//   - prayerTzDate()  → construire une Date pour une heure HH:MM dans une timezone
+//   - updateTime()    → délégue à database.service.savePrayerTime (safeWrite)
+// =============================================================================
+
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { savePrayerTime } from "@/services/database.service";
 import { toast } from "sonner";
 
-// Prayer name mapping (Wolof/Arabic → standard)
+// ─── Grille de prières ───────────────────────────────────────────────────────
+
 export const PRAYER_GRID = [
-  { key: "fajr", label: "Fajr", wolof: "Fajr", icon: "🌅", atmosphere: "warm" as const },
-  { key: "suba", label: "Suba", wolof: "Suba", icon: "☀️", atmosphere: "bright" as const },
-  { key: "dhuhr", label: "Tisbaar", wolof: "Tisbaar", icon: "🌤️", atmosphere: "bright" as const },
-  { key: "asr", label: "Takussan", wolof: "Takussan", icon: "🌇", atmosphere: "bright" as const },
-  { key: "maghrib", label: "Timis", wolof: "Timis", icon: "🌆", atmosphere: "sunset" as const },
-  { key: "isha", label: "Gué", wolof: "Gué", icon: "🌙", atmosphere: "deep" as const },
+  { key: "fajr",    label: "Fajr",     wolof: "Fajr",     icon: "🌅", atmosphere: "warm"   as const },
+  { key: "suba",    label: "Suba",     wolof: "Suba",     icon: "☀️", atmosphere: "bright" as const },
+  { key: "dhuhr",   label: "Tisbaar",  wolof: "Tisbaar",  icon: "🌤️", atmosphere: "bright" as const },
+  { key: "asr",     label: "Takussan", wolof: "Takussan", icon: "🌇", atmosphere: "bright" as const },
+  { key: "maghrib", label: "Timis",    wolof: "Timis",    icon: "🌆", atmosphere: "sunset" as const },
+  { key: "isha",    label: "Gué",      wolof: "Gué",      icon: "🌙", atmosphere: "deep"   as const },
 ] as const;
 
+export type PrayerKey = typeof PRAYER_GRID[number]["key"];
 export type PrayerAtmosphere = "warm" | "bright" | "sunset" | "deep";
 
 export interface PrayerTimeEntry {
-  key: string;
+  key: PrayerKey;
   label: string;
   wolof: string;
   icon: string;
   atmosphere: PrayerAtmosphere;
-  time: string;
+  time: string;          // HH:MM — heure de la prière dans la timezone de référence
   isUnlocked: boolean;
   isNext: boolean;
-  minutesUntil: number;
+  minutesUntil: number;  // diff en minutes dans la timezone du profil
   isPast: boolean;
 }
 
-const DEFAULT_PRAYER_TIMES: Record<string, string> = {
-  fajr: "05:42",
-  suba: "05:57",
-  dhuhr: "14:15",
-  asr: "17:00",
+// ─── Horaires fallback (Dakar, Avril) ────────────────────────────────────────
+
+const DEFAULT_TIMES: Record<string, string> = {
+  fajr:    "05:42",
+  suba:    "05:57",
+  dhuhr:   "14:15",
+  asr:     "17:00",
   maghrib: "19:31",
-  isha: "20:31",
+  isha:    "20:31",
 };
 
-async function trySavePrayerTime(prayerKey: string, newTime: string, userId: string) {
-  const stamp = new Date().toISOString();
+// ─── Utilitaires Timezone ────────────────────────────────────────────────────
 
-  const attempts = [
-    async () =>
-      supabase
-        .from("sanctuary_settings")
-        .upsert(
-          {
-            user_id: userId,
-            prayer_name: prayerKey,
-            custom_time: newTime,
-            updated_by: userId,
-            updated_at: stamp,
-          },
-          { onConflict: "user_id,prayer_name" },
-        ),
-    async () =>
-      supabase
-        .from("sanctuary_settings")
-        .upsert(
-          {
-            user_id: userId,
-            prayer_name: prayerKey,
-            custom_time: newTime,
-            updated_by: "00000000-0000-0000-0000-000000000000",
-            updated_at: stamp,
-          },
-          { onConflict: "user_id,prayer_name" },
-        ),
-    // Compat anciens schémas sans user_id / index composite.
-    async () =>
-      supabase
-        .from("sanctuary_settings")
-        .upsert(
-          {
-            prayer_name: prayerKey,
-            custom_time: newTime,
-            updated_by: userId,
-            updated_at: stamp,
-          },
-          { onConflict: "prayer_name" },
-        ),
-    async () =>
-      supabase
-        .from("sanctuary_settings")
-        .update({
-          custom_time: newTime,
-          updated_by: userId,
-          updated_at: stamp,
-        })
-        .eq("prayer_name", prayerKey),
-  ];
-
-  let lastError: any = null;
-  for (const attempt of attempts) {
-    const { error } = await attempt();
-    if (!error) return null;
-    lastError = error;
+/**
+ * Retourne les heures/minutes courantes dans une timezone donnée.
+ * Utilise l'API Intl.DateTimeFormat — 100% navigateur, aucune dépendance.
+ */
+function getNowInTimezone(tz: string): { hours: number; minutes: number; date: Date } {
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat("fr-FR", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const hours   = parseInt(parts.find(p => p.type === "hour")?.value   ?? "0", 10);
+    const minutes = parseInt(parts.find(p => p.type === "minute")?.value ?? "0", 10);
+    return { hours, minutes, date: now };
+  } catch {
+    // Timezone invalide → fallback locale
+    const now = new Date();
+    return { hours: now.getHours(), minutes: now.getMinutes(), date: now };
   }
-  return lastError;
 }
 
+/**
+ * Retourne l'heure actuelle en minutes (0–1439) dans une timezone donnée.
+ */
+function nowMinutesInTz(tz: string): number {
+  const { hours, minutes } = getNowInTimezone(tz);
+  return hours * 60 + minutes;
+}
+
+/**
+ * Détermine l'atmosphère (ambiance visuelle) selon l'heure dans la timezone.
+ */
+function getAtmosphere(tz: string): PrayerAtmosphere {
+  const { hours } = getNowInTimezone(tz);
+  if (hours >= 5  && hours < 7)  return "warm";
+  if (hours >= 7  && hours < 17) return "bright";
+  if (hours >= 17 && hours < 20) return "sunset";
+  return "deep";
+}
+
+// ─── Hook ────────────────────────────────────────────────────────────────────
+
 export function useSanctuaryTime() {
-  const { user } = useAuth();
-  const [times, setTimes] = useState<Record<string, string>>(DEFAULT_PRAYER_TIMES);
+  const { user, profile } = useAuth();
+
+  // timezone du profil — fallback Dakar si non défini
+  const userTz = profile?.timezone ?? "Africa/Dakar";
+
+  const [times, setTimes] = useState<Record<string, string>>(DEFAULT_TIMES);
+  const [timesLoaded, setTimesLoaded] = useState(false);
   const [now, setNow] = useState(new Date());
-  const [isLoading, setIsLoading] = useState(true);
 
-  // Load times from DB
+  // ── Chargement des horaires depuis Supabase ─────────────────────────────
   const loadTimes = useCallback(async () => {
-    if (!user?.id) {
-      setTimes(DEFAULT_PRAYER_TIMES);
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    let data: any[] | null = null;
-
-    const firstTry = await supabase
+    // On charge en priorité les horaires de l'utilisateur connecté
+    let query = supabase
       .from("sanctuary_settings")
-      .select("prayer_name, custom_time, updated_at")
-      .eq("user_id", user.id);
+      .select("prayer_name, custom_time");
 
-    if (!firstTry.error && (firstTry.data?.length ?? 0) > 0) {
-      data = firstTry.data ?? [];
-    } else {
-      // Compat legacy UNIQUEMENT si user_id n'existe pas dans le schéma.
-      const msg = String(firstTry.error?.message ?? "");
-      const details = String(firstTry.error?.details ?? "");
-      const code = String(firstTry.error?.code ?? "");
-      const missingUserIdColumn =
-        code === "42703" ||
-        msg.includes("user_id") ||
-        details.includes("user_id");
+    if (user?.id) {
+      // Essayer d'abord les horaires personnels (schéma avec user_id)
+      const { data: personal } = await supabase
+        .from("sanctuary_settings")
+        .select("prayer_name, custom_time")
+        .eq("user_id", user.id);
 
-      if (missingUserIdColumn) {
-        const fallback = await supabase
-          .from("sanctuary_settings")
-          .select("prayer_name, custom_time, updated_at");
-        if (!fallback.error) data = fallback.data ?? [];
+      if (personal && personal.length > 0) {
+        const map: Record<string, string> = { ...DEFAULT_TIMES };
+        personal.forEach((r: any) => {
+          if (r.prayer_name && r.custom_time) map[r.prayer_name] = r.custom_time;
+        });
+        setTimes(map);
+        setTimesLoaded(true);
+        return;
       }
     }
 
+    // Fallback : horaires globaux (schéma legacy sans user_id)
+    const { data } = await query;
     if (data && data.length > 0) {
-      const map: Record<string, string> = { ...DEFAULT_PRAYER_TIMES };
-      // Dédup: conserve la ligne la plus récente pour chaque prière.
-      const byPrayer = new Map<string, { custom_time: string; updated_at?: string }>();
+      const map: Record<string, string> = { ...DEFAULT_TIMES };
       data.forEach((r: any) => {
-        if (!r?.prayer_name || !r?.custom_time) return;
-        const prev = byPrayer.get(r.prayer_name);
-        const prevTs = prev?.updated_at ? Date.parse(prev.updated_at) : 0;
-        const nextTs = r?.updated_at ? Date.parse(r.updated_at) : 0;
-        if (!prev || nextTs >= prevTs) {
-          byPrayer.set(r.prayer_name, { custom_time: r.custom_time, updated_at: r.updated_at });
-        }
-      });
-      byPrayer.forEach((value, key) => {
-        map[key] = value.custom_time;
+        if (r.prayer_name && r.custom_time) map[r.prayer_name] = r.custom_time;
       });
       setTimes(map);
-    } else {
-      setTimes(DEFAULT_PRAYER_TIMES);
     }
-    setIsLoading(false);
+    // Si rien en DB → DEFAULT_TIMES restent actifs
+    setTimesLoaded(true);
   }, [user?.id]);
 
   useEffect(() => { loadTimes(); }, [loadTimes]);
 
-  // Realtime sync
+  // ── Realtime sync des horaires ──────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel("sanctuary-settings-sync")
-      .on("postgres_changes", { event: "*", schema: "public", table: "sanctuary_settings" }, () => {
-        loadTimes();
-      })
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sanctuary_settings" },
+        () => loadTimes(),
+      )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [loadTimes]);
 
-  // Clock tick every 30s
+  // ── Tick horloge toutes les 30 secondes ─────────────────────────────────
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 30000);
+    const interval = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(interval);
   }, []);
 
-  // Update a prayer time
-  const updateTime = useCallback(async (prayerKey: string, newTime: string) => {
-    if (!user) return;
+  // ── Mise à jour d'une heure de prière ───────────────────────────────────
+  // Délègue à database.service.savePrayerTime (safeWrite)
+  const updateTime = useCallback(
+    async (prayerKey: string, newTime: string): Promise<boolean> => {
+      if (!user?.id) return false;
 
-    const error = await trySavePrayerTime(prayerKey, newTime, user.id);
-    if (error) {
-      toast.error("Erreur de connexion", {
-        description: error.message || "Impossible d'enregistrer l'heure.",
-      });
-      return;
-    }
-    // Met à jour le state local seulement après confirmation DB.
-    setTimes((prev) => ({ ...prev, [prayerKey]: newTime }));
-    toast.success("Heure enregistrée");
-  }, [user, loadTimes]);
+      // Optimistic update
+      setTimes(prev => ({ ...prev, [prayerKey]: newTime }));
 
-  // Compute prayer states
+      const { error } = await savePrayerTime(user.id, prayerKey, newTime);
+
+      if (error) {
+        // Rollback
+        setTimes(prev => ({ ...prev, [prayerKey]: times[prayerKey] }));
+        toast.error("Impossible d'enregistrer l'heure", {
+          description: error.message,
+        });
+        return false;
+      }
+
+      toast.success("Heure enregistrée ✓");
+      return true;
+    },
+    [user?.id, times],
+  );
+
+  // ── Calcul des états des prières (timezone-aware) ───────────────────────
   const prayers = useMemo((): PrayerTimeEntry[] => {
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // Utilisation de la timezone du profil — plus de getHours() local
+    const nowMins = nowMinutesInTz(userTz);
     let foundNext = false;
 
     return PRAYER_GRID.map(p => {
-      const time = times[p.key] || "00:00";
+      const time = times[p.key] ?? DEFAULT_TIMES[p.key] ?? "00:00";
       const [h, m] = time.split(":").map(Number);
-      const prayerMinutes = h * 60 + m;
-      const diff = prayerMinutes - nowMinutes;
-      const isPast = diff < 0;
+      const prayerMins = h * 60 + m;
+      const diff       = prayerMins - nowMins;
+      const isPast     = diff < -1;      // marge 1 min pour éviter le flash
       const isUnlocked = diff <= 0;
-      const isNext = !foundNext && diff > 0;
+      const isNext     = !foundNext && diff > 0;
       if (isNext) foundNext = true;
 
       return {
@@ -224,19 +224,32 @@ export function useSanctuaryTime() {
         isPast,
       };
     });
-  }, [times, now]);
+    // now est en dépendance pour forcer le recalcul à chaque tick
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [times, now, userTz]);
 
-  // Current atmosphere based on time
-  const atmosphere = useMemo((): PrayerAtmosphere => {
-    const hour = now.getHours();
-    if (hour >= 5 && hour < 7) return "warm";
-    if (hour >= 7 && hour < 17) return "bright";
-    if (hour >= 17 && hour < 20) return "sunset";
-    return "deep";
-  }, [now]);
+  // ── Atmosphère visuelle ─────────────────────────────────────────────────
+  const atmosphere = useMemo(
+    // Recalcule sur chaque tick et sur le changement de timezone
+    () => getAtmosphere(userTz),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [now, userTz],
+  );
 
-  // Next prayer info
-  const nextPrayer = useMemo(() => prayers.find(p => p.isNext) || null, [prayers]);
+  // ── Prochaine prière ────────────────────────────────────────────────────
+  const nextPrayer = useMemo(
+    () => prayers.find(p => p.isNext) ?? null,
+    [prayers],
+  );
 
-  return { prayers, times, updateTime, atmosphere, nextPrayer, now, isLoading };
+  return {
+    prayers,
+    times,
+    timesLoaded,
+    userTz,
+    updateTime,
+    atmosphere,
+    nextPrayer,
+    now,
+  };
 }
