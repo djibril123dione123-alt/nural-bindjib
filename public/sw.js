@@ -5,7 +5,7 @@
 // Optimisé réseau instable (Dakar)
 // ============================================================
 
-const CACHE_NAME = "nural-bindjib-v2";
+const CACHE_NAME = "nural-bindjib-v3";
 
 // Assets critiques pour le mode hors-ligne
 const ASSETS_TO_CACHE = [
@@ -91,8 +91,8 @@ self.addEventListener("fetch", (event) => {
           );
           return response;
         })
-        .then((r) => r || caches.match("/index.html"))
-        .catch(() => caches.match("/index.html"));
+        .then((r) => r || (event.request.mode === "navigate" ? caches.match("/index.html") : null))
+        .catch(() => (event.request.mode === "navigate" ? caches.match("/index.html") : new Response("", { status: 503 })));
     })
   );
 });

@@ -3,7 +3,7 @@
 // Adhan automatique, notifications background, cache offline
 // ============================================================
 
-const CACHE_NAME = "nural-bindjib-v1";
+const CACHE_NAME = "nural-bindjib-v3";
 const ASSETS_TO_CACHE = [
   "/",
   "/index.html",
@@ -47,7 +47,7 @@ self.addEventListener("fetch", (event) => {
           );
           return response;
         })
-        .catch(() => caches.match("/index.html"));
+        .catch(() => (event.request.mode === "navigate" ? caches.match("/index.html") : new Response("", { status: 503 })));
     })
   );
 });

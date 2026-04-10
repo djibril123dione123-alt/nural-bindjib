@@ -89,15 +89,6 @@ async function trySavePrayerTime(prayerKey: string, newTime: string, userId: str
           updated_at: stamp,
         })
         .eq("prayer_name", prayerKey),
-    async () =>
-      supabase
-        .from("sanctuary_settings")
-        .insert({
-          prayer_name: prayerKey,
-          custom_time: newTime,
-          updated_by: userId,
-          updated_at: stamp,
-        }),
   ];
 
   let lastError: any = null;
@@ -128,27 +119,44 @@ export function useSanctuaryTime() {
 
     const firstTry = await supabase
       .from("sanctuary_settings")
-      .select("prayer_name, custom_time")
+      .select("prayer_name, custom_time, updated_at")
       .eq("user_id", user.id);
 
     if (!firstTry.error && (firstTry.data?.length ?? 0) > 0) {
       data = firstTry.data ?? [];
     } else {
-      // Compat schémas legacy : table sans user_id ou données globales par prayer_name.
-      const fallback = await supabase
-        .from("sanctuary_settings")
-        .select("prayer_name, custom_time");
-      if (!fallback.error) {
-        data = fallback.data ?? [];
-      } else {
-        data = [];
+      // Compat legacy UNIQUEMENT si user_id n'existe pas dans le schéma.
+      const msg = String(firstTry.error?.message ?? "");
+      const details = String(firstTry.error?.details ?? "");
+      const code = String(firstTry.error?.code ?? "");
+      const missingUserIdColumn =
+        code === "42703" ||
+        msg.includes("user_id") ||
+        details.includes("user_id");
+
+      if (missingUserIdColumn) {
+        const fallback = await supabase
+          .from("sanctuary_settings")
+          .select("prayer_name, custom_time, updated_at");
+        if (!fallback.error) data = fallback.data ?? [];
       }
     }
 
     if (data && data.length > 0) {
       const map: Record<string, string> = { ...DEFAULT_PRAYER_TIMES };
+      // Dédup: conserve la ligne la plus récente pour chaque prière.
+      const byPrayer = new Map<string, { custom_time: string; updated_at?: string }>();
       data.forEach((r: any) => {
-        if (r?.prayer_name && r?.custom_time) map[r.prayer_name] = r.custom_time;
+        if (!r?.prayer_name || !r?.custom_time) return;
+        const prev = byPrayer.get(r.prayer_name);
+        const prevTs = prev?.updated_at ? Date.parse(prev.updated_at) : 0;
+        const nextTs = r?.updated_at ? Date.parse(r.updated_at) : 0;
+        if (!prev || nextTs >= prevTs) {
+          byPrayer.set(r.prayer_name, { custom_time: r.custom_time, updated_at: r.updated_at });
+        }
+      });
+      byPrayer.forEach((value, key) => {
+        map[key] = value.custom_time;
       });
       setTimes(map);
     } else {
