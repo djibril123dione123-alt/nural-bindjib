@@ -64,3 +64,22 @@ export async function deleteActivityEntry(params: {
     "activity_feed.delete_validated_task_entry",
   );
 }
+
+export async function completeTaskWithXp(params: {
+  task_id: string;
+  pillar: string;
+  xp_value: number;
+  date: string; // YYYY-MM-DD
+  completed: boolean;
+}) {
+  return safeWrite(
+    supabase.rpc("complete_task_with_xp", {
+      p_task_id: params.task_id,
+      p_pillar: params.pillar,
+      p_xp_value: params.xp_value,
+      p_date: params.date,
+      p_completed: params.completed,
+    }),
+    "rpc.complete_task_with_xp",
+  );
+}
