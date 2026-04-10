@@ -85,12 +85,6 @@ export default function SalatContent() {
       }
 
       const existing = getEntry(prayerKey);
-      const now = new Date();
-      const [h, m] = prayer.time.split(":").map(Number);
-      const prayerTime = new Date();
-      prayerTime.setHours(h, m, 0, 0);
-      const diffMin = (now.getTime() - prayerTime.getTime()) / 60000;
-      const onTime = diffMin >= -10 && diffMin <= 30;
       const isMosque = mosqueDone[prayerKey];
 
       if (existing?.completed) {
@@ -102,13 +96,16 @@ export default function SalatContent() {
         if (isMosque) xpToRemove += getXp("mosque") + 5;
         if (preQuranDone[prayerKey]) xpToRemove += getXp("quran_pre");
 
-        await applyPenalty(xpToRemove, `Annulation ${prayer.label}`);
-
-        // Remove related activity entries
-        await supabase.from("activity_feed")
-          .delete()
-          .eq("user_id", user.id)
-          .ilike("action", `%${prayer.label}%`);
+        try {
+          await applyPenalty(xpToRemove, `Annulation ${prayer.label}`);
+          // Best-effort cleanup: ne pas bloquer l'état salat si activity_feed échoue.
+          await supabase.from("activity_feed")
+            .delete()
+            .eq("actor_id", user.id)
+            .ilike("action", `%${prayer.label}%`);
+        } catch (err) {
+          console.warn("Salat rollback side-effects failed:", err);
+        }
 
         toast.info(`${prayer.label} décochée. -${xpToRemove} XP`);
       } else {
@@ -118,9 +115,6 @@ export default function SalatContent() {
           date: today,
           prayer_name: prayerKey,
           completed: true,
-          completed_at: now.toISOString(),
-          on_time: onTime,
-          custom_time: prayer.time,
         }, { onConflict: "user_id,prayer_name,date" });
 
         if (error) { console.error("Upsert salat error:", error); toast.error("Erreur de sauvegarde"); return; }
@@ -136,20 +130,23 @@ export default function SalatContent() {
           ? `Salat ${prayer.label} + Mosquée`
           : `Salat ${prayer.label}`;
 
-        await awardXp(totalXp, source);
-        await recordStreak(prayerKey);
+        try {
+          await awardXp(totalXp, source);
+          await recordStreak(prayerKey);
+        } catch (err) {
+          console.warn("XP/streak side-effects failed:", err);
+        }
 
         if (isMosque) {
           toast.success(`${prayer.label} à la Mosquée ! Tasbih auto-validé. +${totalXp} XP 🕌`);
           await awardXp(10, "Tasbih (Mosquée)");
         } else {
-          toast.success(onTime ? `${prayer.label} à l'heure ! +${totalXp} XP ✨` : `${prayer.label} validée +${totalXp} XP`);
+          toast.success(`${prayer.label} validée +${totalXp} XP`);
           if (!existing?.completed) setShowTasbih(prayerKey);
         }
       }
-
-      await loadEntries();
     } finally {
+      await loadEntries();
       setLoading(prev => ({ ...prev, [prayerKey]: false }));
     }
   }, [user, prayers, mosqueDone, preQuranDone, getXp, awardXp, applyPenalty, recordStreak, fire, loading]);
@@ -170,9 +167,6 @@ export default function SalatContent() {
         date: today,
         prayer_name: p.key,
         completed: true,
-        completed_at: new Date().toISOString(),
-        on_time: false,
-        custom_time: p.time,
       }, { onConflict: "user_id,prayer_name,date" });
       const xp = getXp(p.key) + getXp("mosque") + 5;
       totalBatchXp += xp;

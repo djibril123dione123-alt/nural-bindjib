@@ -10,7 +10,7 @@ import { SkeletonScreen } from "@/components/SkeletonScreen";
 import { toast } from "sonner";
 
 interface ProfileData {
-  user_id: string;
+  id: string;
   display_name: string;
   role: string;
   total_xp: number;
@@ -89,13 +89,13 @@ export default function MiroirAlliance() {
       .on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, (payload: any) => {
         // 🛑 FIX : Détecter Level Up en temps réel
         const updated = payload.new as ProfileData;
-        if (updated?.user_id === user.id) {
+        if (updated?.id === user.id) {
           const newLevel = updated.level || calculateLevel(updated.total_xp || 0);
-          const oldLevel = prevLevels.current[updated.user_id] || 0;
+          const oldLevel = prevLevels.current[updated.id] || 0;
           if (newLevel > oldLevel && oldLevel > 0) {
             setLevelUpLevel(newLevel);
           }
-          prevLevels.current[updated.user_id] = newLevel;
+          prevLevels.current[updated.id] = newLevel;
         }
         loadAll();
       })
@@ -116,8 +116,8 @@ export default function MiroirAlliance() {
       setProfiles(profs as ProfileData[]);
       // Initialiser les niveaux précédents au premier chargement
       profs.forEach((p: any) => {
-        if (!prevLevels.current[p.user_id]) {
-          prevLevels.current[p.user_id] = p.level || calculateLevel(p.total_xp || 0);
+        if (!prevLevels.current[p.id]) {
+          prevLevels.current[p.id] = p.level || calculateLevel(p.total_xp || 0);
         }
       });
     }
@@ -138,8 +138,8 @@ export default function MiroirAlliance() {
 
     if (profs) {
       const dailies: DailyXp[] = profs.map((p: any) => {
-        const userTasks = (tasksData || []).filter((t: any) => t.user_id === p.user_id);
-        const userSalat = (salatData || []).filter((s: any) => s.user_id === p.user_id);
+        const userTasks = (tasksData || []).filter((t: any) => t.user_id === p.id);
+        const userSalat = (salatData || []).filter((s: any) => s.user_id === p.id);
 
         // 🛑 FIX : Calculer chaque pilier correctement
         const bodyTasks = userTasks.filter((t: any) => t.pillar === "body");
@@ -147,7 +147,7 @@ export default function MiroirAlliance() {
         const lifeTasks = userTasks.filter((t: any) => t.pillar === "life");
 
         return {
-          userId: p.user_id,
+          userId: p.id,
           xp: userTasks.length * 10 + userSalat.length * 10,
           pillars: {
             body: bodyTasks.length >= 3,   // 3+ tâches BODY
@@ -160,7 +160,7 @@ export default function MiroirAlliance() {
       setDailyXp(dailies);
 
       const allDone = profs.length >= 2 && profs.every((p: any) => {
-        const count = (salatData || []).filter((s: any) => s.user_id === p.user_id).length;
+        const count = (salatData || []).filter((s: any) => s.user_id === p.id).length;
         return count >= 5;
       });
       setBothComplete(allDone);
@@ -190,7 +190,7 @@ export default function MiroirAlliance() {
     if (actData) {
       const seen = new Set<string>();
       const deduped = actData.filter((a: any) => {
-        const key = `${a.user_id}-${a.action}`;
+        const key = `${a.actor_id}-${a.action}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -204,8 +204,8 @@ export default function MiroirAlliance() {
   // 🛑 FIX : Bouton d'encouragement instantané
   const sendEncouragement = async () => {
     if (!user) return;
-    const me = profiles.find(p => p.user_id === user.id);
-    const partner = profiles.find(p => p.user_id !== user.id);
+    const me = profiles.find(p => p.id === user.id);
+    const partner = profiles.find(p => p.id !== user.id);
     if (!partner || !me) return;
 
     const message = me.role === "guide"
@@ -213,7 +213,7 @@ export default function MiroirAlliance() {
       : `Binta pense à toi et t'encourage ! 🤍`;
 
     await supabase.from("activity_feed").insert({
-      user_id: user.id,
+      actor_id: user.id,
       action: `💌 ${message}`,
       xp_earned: 0,
     });
@@ -221,8 +221,8 @@ export default function MiroirAlliance() {
     toast.success("Message d'encouragement envoyé ✨");
   };
 
-  const me = profiles.find(p => p.user_id === user?.id);
-  const partner = profiles.find(p => p.user_id !== user?.id);
+  const me = profiles.find(p => p.id === user?.id);
+  const partner = profiles.find(p => p.id !== user?.id);
 
   const timeAgo = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime();
@@ -267,7 +267,7 @@ export default function MiroirAlliance() {
             <div className="flex items-end justify-center gap-8" style={{ height: 280 }}>
               <VerticalBar
                 profile={me}
-                dailyXp={dailyXp.find(d => d.userId === me.user_id)?.xp || 0}
+                dailyXp={dailyXp.find(d => d.userId === me.id)?.xp || 0}
                 target={dailyTarget}
                 color="blue"
                 isSelf
@@ -278,7 +278,7 @@ export default function MiroirAlliance() {
               </div>
               <VerticalBar
                 profile={partner}
-                dailyXp={dailyXp.find(d => d.userId === partner.user_id)?.xp || 0}
+                dailyXp={dailyXp.find(d => d.userId === partner.id)?.xp || 0}
                 target={dailyTarget}
                 color="pink"
               />
@@ -287,9 +287,9 @@ export default function MiroirAlliance() {
             {/* 🛑 FIX : Piliers avec état correct pour BODY/MIND/FAITH/LIFE */}
             <div className="grid grid-cols-2 gap-4 mt-4">
               {[me, partner].map(p => {
-                const dx = dailyXp.find(d => d.userId === p.user_id);
+                const dx = dailyXp.find(d => d.userId === p.id);
                 return (
-                  <div key={p.user_id} className="flex items-center justify-center gap-3">
+                  <div key={p.id} className="flex items-center justify-center gap-3">
                     {[
                       { icon: "⚔️", key: "body", label: "Corps" },
                       { icon: "📚", key: "mind", label: "Esprit" },
@@ -300,7 +300,7 @@ export default function MiroirAlliance() {
                       return (
                         <div key={pillar.key} className="flex flex-col items-center gap-0.5">
                           <motion.span
-                            key={`${p.user_id}-${pillar.key}-${done}`}
+                            key={`${p.id}-${pillar.key}-${done}`}
                             animate={done ? { scale: [1, 1.3, 1] } : {}}
                             transition={{ duration: 0.4 }}
                             className={`text-lg transition-all ${
@@ -380,7 +380,7 @@ export default function MiroirAlliance() {
           <div className="glass rounded-2xl p-4 space-y-3 border border-accent/10">
             <h3 className="text-xs font-display font-bold uppercase tracking-wider text-accent">🪞 Activité du jour</h3>
             {activity.map((item: any) => {
-              const isMe = item.user_id === user?.id;
+              const isMe = item.actor_id === user?.id;
               const prof = isMe ? me : partner;
               return (
                 <motion.div key={item.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}

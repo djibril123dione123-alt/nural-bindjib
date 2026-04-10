@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 interface FeedItem {
   id: string;
-  user_id: string;
+  actor_id: string;
   action: string;
   xp_earned: number;
   created_at: string;
@@ -40,7 +40,7 @@ export function ActivityFeed() {
       // Deduplicate: keep only latest per user+action combo
       const seen = new Set<string>();
       const deduped = (data as FeedItem[]).filter(item => {
-        const key = `${item.user_id}-${item.action}`;
+        const key = `${item.actor_id}-${item.action}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -50,10 +50,10 @@ export function ActivityFeed() {
   };
 
   const loadProfiles = async () => {
-    const { data } = await supabase.from("profiles").select("user_id, display_name, role");
+    const { data } = await supabase.from("profiles").select("id, display_name, role");
     if (data) {
       const map: Record<string, { name: string; role: string }> = {};
-      data.forEach(p => { map[p.user_id] = { name: p.display_name, role: p.role }; });
+      data.forEach(p => { map[p.id] = { name: p.display_name, role: p.role }; });
       setProfiles(map);
     }
   };
@@ -77,8 +77,8 @@ export function ActivityFeed() {
       </h3>
       <AnimatePresence mode="popLayout">
         {items.map(item => {
-          const isMe = item.user_id === user?.id;
-          const profile = profiles[item.user_id];
+          const isMe = item.actor_id === user?.id;
+          const profile = profiles[item.actor_id];
           const name = profile?.name || "...";
           const emoji = profile?.role === "guardian" ? "🛡️" : "🧭";
           return (

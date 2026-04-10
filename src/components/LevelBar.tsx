@@ -29,7 +29,7 @@ export function LevelBar({ totalXp: initialXp, dailyXp, role = "guide", partnerN
         event: "UPDATE",
         schema: "public",
         table: "profiles",
-        filter: `user_id=eq.${user.id}`,
+        filter: `id=eq.${user.id}`,
       }, (payload) => {
         const newXp = payload.new?.total_xp;
         if (newXp !== undefined) setTotalXp(newXp);

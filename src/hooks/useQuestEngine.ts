@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { TablesInsert } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
@@ -34,7 +35,7 @@ export function useQuestEngine() {
         .eq("date", today),
       supabase.from("profiles")
         .select("total_xp")
-        .eq("user_id", user.id)
+        .eq("id", user.id)
         .single(),
       supabase.from("daily_progress")
         .select("daily_xp")
@@ -45,10 +46,6 @@ export function useQuestEngine() {
         .select("id, title, category, xp")
         .eq("user_id", user.id),
     ]);
-
-    // Log de diagnostic — retirer après résolution
-    console.log("[QuestEngine] tasksRes:", tasksRes.error ?? `${tasksRes.data?.length} rows`);
-    console.log("[QuestEngine] profRes:", profRes.error ?? profRes.data);
 
     const completedMap: Record<string, boolean> = {};
     const pillarDone:   Record<string, number>  = {};
@@ -86,7 +83,7 @@ export function useQuestEngine() {
       .channel(`quest-${user.id}`)
       .on("postgres_changes", {
         event: "UPDATE", schema: "public", table: "profiles",
-        filter: `user_id=eq.${user.id}`,
+        filter: `id=eq.${user.id}`,
       }, (p: any) => {
         if (p.new?.total_xp !== undefined) setTotalXp(p.new.total_xp);
       })
@@ -107,18 +104,18 @@ export function useQuestEngine() {
     setCompleted(prev => ({ ...prev, [questId]: nowDone }));
 
     try {
-      const { error: taskErr } = await supabase.from("user_tasks").upsert(
-        {
-          user_id:      user.id,
-          task_id:      questId,
-          date:         today,
-          completed:    nowDone,
-          completed_at: nowDone ? new Date().toISOString() : null,
-          xp_value:     xpValue,
-          pillar,
-        },
-        { onConflict: "user_id,task_id,date" },
-      );
+      const taskRow: TablesInsert<"user_tasks"> = {
+        user_id: user.id,
+        task_id: questId,
+        date: today,
+        completed: nowDone,
+        xp_value: xpValue,
+        pillar,
+        completed_at: nowDone ? new Date().toISOString() : null,
+      };
+      const { error: taskErr } = await supabase
+        .from("user_tasks")
+        .upsert(taskRow, { onConflict: "user_id,task_id,date" });
       if (taskErr) throw new Error(`user_tasks upsert: ${taskErr.message}`);
 
       if (nowDone) {
@@ -162,7 +159,7 @@ export function useQuestEngine() {
       }
 
       supabase.from("activity_feed").insert({
-        user_id:   user.id,
+        actor_id:  user.id,
         action:    nowDone ? `validé [${pillar}] +${xpValue} XP` : `décoché [${pillar}]`,
         xp_earned: nowDone ? xpValue : -xpValue,
       }).then(() => {});

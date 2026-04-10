@@ -46,10 +46,10 @@ export default function AlterEgoLab() {
 
   const loadPartner = async () => {
     if (!user) return;
-    const { data } = await supabase.from("profiles").select("*").neq("user_id", user.id).limit(1).single();
+    const { data } = await supabase.from("profiles").select("*").neq("id", user.id).limit(1).single();
     if (data) {
       setPartnerName(data.display_name);
-      setPartnerId(data.user_id);
+      setPartnerId(data.id);
     }
   };
 
@@ -87,7 +87,7 @@ export default function AlterEgoLab() {
     // Log activity
     if (user) {
       await supabase.from("activity_feed").insert({
-        user_id: user.id,
+        actor_id: user.id,
         action: `a terminé la mission "${mission.title}"`,
         xp_earned: mission.xp,
       });

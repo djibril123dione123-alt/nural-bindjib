@@ -29,8 +29,8 @@ export default function AlterEgoLabContent() {
 
   const loadPartner = async () => {
     if (!user) return;
-    const { data } = await supabase.from("profiles").select("*").neq("user_id", user.id).limit(1).single();
-    if (data) { setPartnerName(data.display_name); setPartnerId(data.user_id); }
+    const { data } = await supabase.from("profiles").select("*").neq("id", user.id).limit(1).single();
+    if (data) { setPartnerName(data.display_name); setPartnerId(data.id); }
   };
 
   const loadMissions = async () => {
@@ -48,7 +48,7 @@ export default function AlterEgoLabContent() {
 
   const completeMission = async (mission: Mission) => {
     await supabase.from("alter_ego_missions").update({ status: "completed", completed_at: new Date().toISOString() }).eq("id", mission.id);
-    if (user) await supabase.from("activity_feed").insert({ user_id: user.id, action: `a terminé la mission "${mission.title}"`, xp_earned: mission.xp });
+    if (user) await supabase.from("activity_feed").insert({ actor_id: user.id, action: `a terminé la mission "${mission.title}"`, xp_earned: mission.xp });
     toast.success(`+${mission.xp} XP — Mission accomplie ! 🎉`);
   };
 

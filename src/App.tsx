@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
+import { DuoPresenceProvider } from "@/hooks/useDuoPresence";
 import { AudioEngineProvider } from "@/hooks/useAudioEngine";
 import { AnimatePresence, motion } from "framer-motion";
 import { SkeletonScreen } from "@/components/SkeletonScreen";
@@ -67,13 +68,15 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner richColors closeButton />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
-          <MidnightPenaltyGuard>
-            <AudioEngineProvider>
-              <AnimatedRoutes />
-            </AudioEngineProvider>
-          </MidnightPenaltyGuard>
+          <DuoPresenceProvider>
+            <MidnightPenaltyGuard>
+              <AudioEngineProvider>
+                <AnimatedRoutes />
+              </AudioEngineProvider>
+            </MidnightPenaltyGuard>
+          </DuoPresenceProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

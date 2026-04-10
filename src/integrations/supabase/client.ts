@@ -1,12 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// Récupération de l'URL
+// Variables publiques Vite uniquement (préfixe VITE_). Clé anon = prévue pour le navigateur ;
+// ne jamais exposer la service_role dans le bundle client.
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-
-// Récupération de la clé (on teste les deux noms possibles pour éviter tout conflit)
-const SUPABASE_PUBLISHABLE_KEY = 
-  import.meta.env.VITE_SUPABASE_ANON_KEY || 
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Log de sécurité en développement uniquement

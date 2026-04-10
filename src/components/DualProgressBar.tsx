@@ -29,7 +29,7 @@ export function DualProgressBar() {
   }, [user]);
 
   const loadBoth = async () => {
-    const { data: profiles } = await supabase.from("profiles").select("user_id, display_name, role, total_xp, level");
+    const { data: profiles } = await supabase.from("profiles").select("id, display_name, role, total_xp, level");
     if (!profiles) return;
 
     setPartners(profiles.map((p: any) => ({

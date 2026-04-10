@@ -2,9 +2,9 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
+/** Row `profiles` : `id` = `auth.users.id` (pas de colonne `user_id` côté nouveau schéma). */
 interface Profile {
   id: string;
-  user_id: string;
   display_name: string;
   role: "guide" | "guardian";
   avatar_emoji: string;
@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data } = await supabase
       .from("profiles")
       .select("*")
-      .eq("user_id", userId)
+      .eq("id", userId)
       .single();
     if (data) setProfile(data as Profile);
   };

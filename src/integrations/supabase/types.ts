@@ -17,23 +17,23 @@ export type Database = {
       activity_feed: {
         Row: {
           action: string
+          actor_id: string
           created_at: string | null
           id: string
-          user_id: string
           xp_earned: number | null
         }
         Insert: {
           action: string
+          actor_id: string
           created_at?: string | null
           id?: string
-          user_id: string
           xp_earned?: number | null
         }
         Update: {
           action?: string
+          actor_id?: string
           created_at?: string | null
           id?: string
-          user_id?: string
           xp_earned?: number | null
         }
         Relationships: []
@@ -269,17 +269,15 @@ export type Database = {
           level: number | null
           role: string
           total_xp: number | null
-          user_id: string
         }
         Insert: {
           avatar_emoji?: string | null
           created_at?: string | null
           display_name?: string
-          id?: string
+          id: string
           level?: number | null
           role?: string
           total_xp?: number | null
-          user_id: string
         }
         Update: {
           avatar_emoji?: string | null
@@ -289,7 +287,6 @@ export type Database = {
           level?: number | null
           role?: string
           total_xp?: number | null
-          user_id?: string
         }
         Relationships: []
       }
@@ -301,6 +298,7 @@ export type Database = {
           custom_time: string | null
           date: string
           id: string
+          notes: string | null
           on_time: boolean | null
           prayer_name: string
           user_id: string
@@ -312,6 +310,7 @@ export type Database = {
           custom_time?: string | null
           date?: string
           id?: string
+          notes?: string | null
           on_time?: boolean | null
           prayer_name: string
           user_id: string
@@ -323,6 +322,7 @@ export type Database = {
           custom_time?: string | null
           date?: string
           id?: string
+          notes?: string | null
           on_time?: boolean | null
           prayer_name?: string
           user_id?: string
