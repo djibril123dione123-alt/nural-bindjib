@@ -1,5 +1,5 @@
 // ============================================================
-// Index.tsx — Sultan Engine V3 ELITE
+// Index.tsx — Sultan Engine V4 ELITE
 //
 // Boost UX :
 //   ✅ Micro-rebond (scale 0.95 → 1.05) sur cocher une tâche
