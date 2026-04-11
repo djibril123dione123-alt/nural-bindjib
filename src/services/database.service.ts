@@ -57,7 +57,7 @@ export async function toggleTodo(todoId: string, completed: boolean): Promise<Wr
 // ─── Missions & Lab (Répare AlterEgoLabContent.tsx) ─────────────────────────
 
 /**
- * Répare l'erreur : "createMission" is not exported
+ * Répare l'erreur : "createMission" is not exported ,
  */
 export async function createMission(userId: string, title: string, rewardXp: number): Promise<WriteResult<any>> {
   return safeWrite(
