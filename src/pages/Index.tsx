@@ -20,6 +20,7 @@ import { PillarCard } from "@/components/PillarCard";
 import { PenaltyButtons } from "@/components/PenaltyButtons";
 import { ConfettiOverlay } from "@/components/ConfettiOverlay";
 import { BottomNav } from "@/components/BottomNav";
+import { ActivityFeed } from "@/components/ActivityFeed";
 import { DualProgressBar } from "@/components/DualProgressBar";
 
 const Index = () => {
