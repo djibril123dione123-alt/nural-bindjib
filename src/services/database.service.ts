@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 
-// ─── Types & Erreurs ──────────────────────────────────────────────────────────
+// ─── Types & Erreurs (Standard Sanctuary) ───────────────────────────────────
 
 export interface WriteResult<T> {
   data: T | null;
@@ -26,11 +26,17 @@ export async function safeWrite<T>(
 ): Promise<WriteResult<T>> {
   try {
     const { data, error } = await operation;
+
     if (error) {
-      const dbError = new DatabaseError(context, error.code ?? null, error.message ?? "Erreur inconnue");
+      const dbError = new DatabaseError(
+        context,
+        error.code ?? null,
+        error.message ?? "Erreur inconnue",
+      );
       console.error(`[safeWrite] ${context}:`, error);
       return { data: null, error: dbError };
     }
+
     return { data, error: null };
   } catch (thrown: unknown) {
     const msg = thrown instanceof Error ? thrown.message : String(thrown);
@@ -38,7 +44,34 @@ export async function safeWrite<T>(
   }
 }
 
-// ─── Moteur de Quêtes (utilisé par useQuestEngine) ──────────────────────────
+// ─── Gestion du Temps (Répare l'erreur de build Vercel) ─────────────────────
+
+/**
+ * Crucial : Exportation de la fonction attendue par useSanctuaryTime.ts
+ */
+export async function savePrayerTime(
+  userId: string,
+  prayerKey: string,
+  newTime: string,
+): Promise<WriteResult<null>> {
+  return safeWrite(
+    "savePrayerTime",
+    supabase
+      .from("sanctuary_settings")
+      .upsert(
+        {
+          user_id: userId,
+          prayer_name: prayerKey,
+          custom_time: newTime,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,prayer_name" }
+      ) as any
+  );
+}
+
+// ─── Moteur de Quêtes & XP (pour useQuestEngine) ─────────────────────────────
 
 export async function completeTaskWithXp(params: {
   task_id: string;
@@ -97,50 +130,24 @@ export async function removeTaskActivity(
   );
 }
 
-// ─── Sanctuary Time (utilisé par useSanctuaryTime) ──────────────────────────
-
-export async function savePrayerTime(
-  userId: string,
-  prayerKey: string,
-  newTime: string,
-): Promise<WriteResult<null>> {
-  return safeWrite(
-    "savePrayerTime",
-    supabase
-      .from("sanctuary_settings")
-      .upsert(
-        {
-          user_id: userId,
-          prayer_name: prayerKey,
-          custom_time: newTime,
-          updated_by: userId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,prayer_name" }
-      ) as any
-  );
-}
-
 // ─── Journal & Miroir ───────────────────────────────────────────────────────
 
 export async function saveJournalEntry(payload: any) {
   return safeWrite("saveJournalEntry", supabase.from("journal_entries").insert(payload).select("id").single());
 }
 
-export async function sendMessage(senderId: string, content: string, receiverId: string | null = null) {
-  return safeWrite("sendMessage", supabase.from("duo_messages").insert({
-    sender_id: senderId, receiver_id: receiverId, content, body: content
-  }).select("id").single());
-}
-
 export async function sendEncouragement(userId: string, role: string): Promise<WriteResult<null>> {
   const msg = role === "guide" ? "Djibril t'encourage ! 🤍" : "Binta t'encourage ! 🤍";
   return safeWrite("sendEncouragement", supabase.from("activity_feed").insert({
-    actor_id: userId, user_id: userId, event_type: "social", event_label: "Encouragement", action: `💌 ${msg}`
+    actor_id: userId,
+    user_id: userId,
+    event_type: "social",
+    event_label: "Encouragement",
+    action: `💌 ${msg}`,
   }) as any);
 }
 
-// ─── Todos ───────────────────────────────────────────────────────────────────
+// ─── Todos & Missions ───────────────────────────────────────────────────────
 
 export async function addTodo(userId: string, title: string) {
   return safeWrite("addTodo", supabase.from("user_todos").insert({ user_id: userId, title: title.trim(), completed: false }).select("id").single());
