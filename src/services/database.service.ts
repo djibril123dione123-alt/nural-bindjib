@@ -54,6 +54,57 @@ export async function toggleTodo(todoId: string, completed: boolean): Promise<Wr
   );
 }
 
+// ─── Missions & Lab (Répare AlterEgoLabContent.tsx) ─────────────────────────
+
+/**
+ * Répare l'erreur : "createMission" is not exported
+ */
+export async function createMission(userId: string, title: string, rewardXp: number): Promise<WriteResult<any>> {
+  return safeWrite(
+    "createMission",
+    supabase
+      .from("user_missions")
+      .insert({
+        user_id: userId,
+        title: title.trim(),
+        reward_xp: rewardXp,
+        status: "active",
+        created_at: new Date().toISOString()
+      })
+      .select("id")
+      .single()
+  );
+}
+
+/**
+ * Répare l'erreur : "completeMission" is not exported
+ */
+export async function completeMission(missionId: string, userId: string, xpGain: number): Promise<WriteResult<null>> {
+  return safeWrite(
+    "completeMission",
+    supabase.rpc("complete_user_mission", {
+      p_mission_id: missionId,
+      p_user_id: userId,
+      p_xp_gain: xpGain
+    }) as any
+  );
+}
+// ─── Activité (Check final pour l'import manquant dans Index.tsx) ───────────
+
+export async function insertActivity(payload: any) {
+  return safeWrite(
+    "insertActivity",
+    supabase
+      .from("activity_feed")
+      .insert({ 
+        xp_earned: 0, 
+        ...payload,
+        created_at: new Date().toISOString() 
+      })
+      .select("id")
+      .single()
+  );
+}
 /**
  * LA FONCTION MANQUANTE : updateTodoTitle
  */
