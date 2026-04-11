@@ -45,7 +45,7 @@ export async function safeWrite<T>(
   }
 }
 
-// ─── Fonctions pour useQuestEngine (Les manquantes) ─────────────────────────
+// ─── Fonctions de Quêtes (pour useQuestEngine) ─────────────────────────────
 
 export async function completeTaskWithXp(params: {
   task_id: string;
@@ -90,10 +90,7 @@ export async function removeTaskActivity(
   taskId?: string,
   eventType = "task"
 ): Promise<WriteResult<null>> {
-  const patterns = [
-    `action.ilike.%[${pillarOrTaskLabel}]%`,
-    `action.ilike.%${pillarOrTaskLabel}%`,
-  ];
+  const patterns = [`action.ilike.%[${pillarOrTaskLabel}]%`, `action.ilike.%${pillarOrTaskLabel}%` ];
   if (taskId) patterns.push(`action.ilike.%(${taskId})%`);
 
   return safeWrite(
@@ -107,7 +104,54 @@ export async function removeTaskActivity(
   );
 }
 
-// ─── Autres Méthodes Métier (Sprints précédents) ────────────────────────────
+// ─── Fonctions de Temps (pour useSanctuaryTime) ───────────────────────────
+
+export async function savePrayerTime(
+  userId: string,
+  prayerKey: string,
+  newTime: string,
+): Promise<WriteResult<null>> {
+  return safeWrite(
+    "savePrayerTime",
+    supabase
+      .from("sanctuary_settings")
+      .upsert(
+        {
+          user_id: userId,
+          prayer_name: prayerKey,
+          custom_time: newTime,
+          updated_by: userId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,prayer_name" }
+      ) as any
+  );
+}
+
+// ─── Miroir & Social (Encouragements) ───────────────────────────────────────
+
+export async function sendEncouragement(
+  userId: string,
+  role: string,
+): Promise<WriteResult<null>> {
+  const message = role === "guide" 
+    ? "Djibril pense à toi et t'encourage ! 🤍" 
+    : "Binta pense à toi et t'encourage ! 🤍";
+
+  return safeWrite(
+    "sendEncouragement",
+    supabase.from("activity_feed").insert({
+      actor_id: userId,
+      user_id: userId,
+      event_type: "social",
+      event_label: "Encouragement",
+      action: `💌 ${message}`,
+      xp_earned: 0,
+    }) as any
+  );
+}
+
+// ─── Méthodes Classiques (Journal, Todos, Missions) ────────────────────────
 
 export async function saveJournalEntry(payload: any) {
   return safeWrite("saveJournalEntry", supabase.from("journal_entries").insert(payload).select("id").single());
@@ -115,10 +159,7 @@ export async function saveJournalEntry(payload: any) {
 
 export async function sendMessage(senderId: string, content: string, receiverId: string | null = null) {
   return safeWrite("sendMessage", supabase.from("duo_messages").insert({
-    sender_id: senderId,
-    receiver_id: receiverId,
-    content,
-    body: content
+    sender_id: senderId, receiver_id: receiverId, content, body: content
   }).select("id").single());
 }
 
@@ -132,4 +173,8 @@ export async function toggleTodo(todoId: string, completed: boolean) {
 
 export async function deleteTodo(todoId: string) {
   return safeWrite("deleteTodo", supabase.from("user_todos").delete().eq("id", todoId) as any);
+}
+
+export async function insertActivity(payload: any) {
+  return safeWrite("insertActivity", supabase.from("activity_feed").insert({ xp_earned: 0, ...payload }).select("id").single());
 }
